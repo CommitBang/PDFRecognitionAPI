@@ -12,13 +12,17 @@ from app.services.reference_extractor import ReferenceExtractor
 from app.services.figure_mapper import FigureMapper
 
 class PDFProcessor:
-    def __init__(self, dpi: int = 300, use_gpu: bool = True, lang: str = 'en'):
+    def __init__(self, dpi: int = 150, use_gpu: bool = True, lang: str = 'en'):
         self.dpi = dpi
         # Initialize PP-StructureV3 once for all pages
         self.pp_structure = PPStructureV3(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
+            use_seal_recognition=False,
+            use_table_recognition=True,
+            use_formula_recognition=True,
+            use_chart_recognition=False,
             device='gpu' if use_gpu else 'cpu'
         )
         
