@@ -9,77 +9,85 @@ class LayoutDetector:
     def detect_layout_and_text(self, image_path: str) -> Dict[str, Any]:
         """Detect layout and extract text using PP-Structure"""
         try:
-            # Run PP-Structure analysis
-            output = self.pp_structure(image_path)
+            # Run PP-Structure analysis - predict() returns a list of results
+            output_list = self.pp_structure.predict(image_path)
             
-            print(f"PP-Structure output type: {type(output)}")
+            print(f"PP-Structure output type: {type(output_list)}")
+            print(f"PP-Structure output length: {len(output_list) if isinstance(output_list, list) else 'Not a list'}")
             
-            if not output or 'res' not in output:
+            if not output_list or not isinstance(output_list, list):
                 return {'text_blocks': [], 'layout_blocks': []}
-            
-            res = output['res']
-            
-            # Extract layout detection results
-            layout_det_res = res.get('layout_det_res', {})
-            layout_boxes = layout_det_res.get('boxes', [])
-            
-            # Extract OCR results
-            ocr_res = res.get('overall_ocr_res', {})
-            rec_texts = ocr_res.get('rec_texts', [])
-            rec_scores = ocr_res.get('rec_scores', [])
-            rec_boxes = ocr_res.get('rec_boxes', [])
-            
-            print(f"Found {len(layout_boxes)} layout boxes")
-            print(f"Found {len(rec_texts)} OCR texts")
             
             text_blocks = []
             layout_blocks = []
             
-            # Process OCR results to create text blocks
-            for i, text in enumerate(rec_texts):
-                if i < len(rec_scores) and i < len(rec_boxes):
-                    # Convert numpy array to list if needed
-                    box = rec_boxes[i]
-                    if isinstance(box, np.ndarray):
-                        box = box.tolist()
-                    
-                    # rec_boxes format: [x1, y1, x2, y2]
-                    if len(box) >= 4:
-                        bbox_formatted = {
-                            'x': int(box[0]),
-                            'y': int(box[1]),
-                            'width': int(box[2] - box[0]),
-                            'height': int(box[3] - box[1])
-                        }
-                        
-                        text_block = {
-                            'text': text,
-                            'bbox': bbox_formatted,
-                            'confidence': float(rec_scores[i]) if i < len(rec_scores) else 1.0
-                        }
-                        text_blocks.append(text_block)
-            
-            # Process layout boxes to create layout blocks (non-text elements)
-            for box in layout_boxes:
-                label = box.get('label', '')
-                coordinate = box.get('coordinate', [])
-                score = box.get('score', 0.0)
+            # Process each result in the list - each result is a dict
+            for result in output_list:
+                print(f"Processing result: {type(result)}")
+                print(f"Result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
                 
-                # Skip text labels as we already processed OCR results
-                if label == 'text':
+                # Direct access to result dict (based on official docs)
+                if not isinstance(result, dict):
                     continue
                 
-                # Format bbox
-                if len(coordinate) >= 4:
-                    bbox_formatted = self._format_bbox_from_coords(coordinate)
+                # Extract layout detection results
+                layout_det_res = result.get('layout_det_res', {})
+                layout_boxes = layout_det_res.get('boxes', [])
+                
+                # Extract OCR results
+                overall_ocr_res = result.get('overall_ocr_res', {})
+                rec_texts = overall_ocr_res.get('rec_texts', [])
+                rec_scores = overall_ocr_res.get('rec_scores', [])
+                rec_boxes = overall_ocr_res.get('rec_boxes', [])
+                
+                print(f"Found {len(layout_boxes)} layout boxes")
+                print(f"Found {len(rec_texts)} OCR texts")
+                
+                # Process OCR results to create text blocks
+                for i, text in enumerate(rec_texts):
+                    if i < len(rec_scores) and i < len(rec_boxes):
+                        # Convert numpy array to list if needed
+                        box = rec_boxes[i]
+                        if isinstance(box, np.ndarray):
+                            box = box.tolist()
+                        
+                        # rec_boxes format: [x1, y1, x2, y2]
+                        if len(box) >= 4:
+                            bbox_formatted = {
+                                'x': int(box[0]),
+                                'y': int(box[1]),
+                                'width': int(box[2] - box[0]),
+                                'height': int(box[3] - box[1])
+                            }
+                            
+                            text_block = {
+                                'text': text,
+                                'bbox': bbox_formatted,
+                                'confidence': float(rec_scores[i]) if i < len(rec_scores) else 1.0
+                            }
+                            text_blocks.append(text_block)
+                
+                # Process layout boxes to create layout blocks (non-text elements)
+                for box in layout_boxes:
+                    label = box.get('label', '')
+                    coordinate = box.get('coordinate', [])
+                    score = box.get('score', 0.0)
                     
-                    layout_block = {
-                        'type': label,
-                        'bbox': bbox_formatted,
-                        'confidence': score,
-                        'text': self._extract_text_for_layout(bbox_formatted, text_blocks)
-                    }
-                    layout_blocks.append(layout_block)
+                    # Skip text labels as we already processed OCR results
+                    if label == 'text':
+                        continue
+                    
+                    # Format bbox
+                    if len(coordinate) >= 4:
+                        bbox_formatted = self._format_bbox_from_coords(coordinate)
+                        
+                        layout_block = {
+                            'type': label,
+                            'bbox': bbox_formatted,
+                            'confidence': score,
+                            'text': self._extract_text_for_layout(bbox_formatted, text_blocks)
+                        }
+                        layout_blocks.append(layout_block)
             
             print(f"Created {len(text_blocks)} text blocks and {len(layout_blocks)} layout blocks")
             
