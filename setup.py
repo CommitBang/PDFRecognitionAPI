@@ -28,10 +28,25 @@ def download_yolo_model():
 def install_requirements():
     """Install Python requirements"""
     try:
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
+        # Install PyTorch with CUDA support first
+        print("Installing PyTorch with CUDA support...")
+        subprocess.check_call([
+            sys.executable, '-m', 'pip', 'install', 
+            '--extra-index-url', 'https://download.pytorch.org/whl/cu121',
+            '-r', 'requirements.txt'
+        ])
         print("Requirements installed successfully")
     except subprocess.CalledProcessError as e:
         print(f"Error installing requirements: {e}")
+        print("Trying fallback installation...")
+        try:
+            # Fallback to CPU version if GPU installation fails
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'torch', 'torchvision', 'torchaudio'])
+            # Install other requirements
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt', '--ignore-installed', 'torch', 'torchvision', 'torchaudio'])
+            print("Fallback installation completed")
+        except subprocess.CalledProcessError as e2:
+            print(f"Fallback installation also failed: {e2}")
 
 def main():
     print("Setting up PDF Layout Analysis API...")
