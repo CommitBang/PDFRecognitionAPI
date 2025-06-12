@@ -1,21 +1,14 @@
-from paddleocr import PPStructureV3
+from paddlex import create_pipeline
 from typing import List, Dict, Any
 
 class LayoutDetector:
     def __init__(self, use_gpu: bool = True, lang: str = 'en'):
-        """Initialize PP-StructureV3 for layout detection and text recognition"""
-        self.pipeline = PPStructureV3(
-            use_gpu=use_gpu,
-            lang=lang,
-            show_log=False
-        )
+        """Initialize PP-StructureV3 for layout detection and text recognition using PaddleX"""
+        self.pipeline = create_pipeline(pipeline="PP-StructureV3")
     
     def detect_layout_and_text(self, image_path: str) -> Dict[str, Any]:
         """Detect layout and extract text using PP-StructureV3"""
-        """Detect layout and extract text using PP-StructureV3"""
         try:
-            # Run PP-StructureV3 pipeline
-            output = self.pipeline.predict(image_path)
             # Run PP-StructureV3 pipeline
             output = self.pipeline.predict(image_path)
             
@@ -34,7 +27,6 @@ class LayoutDetector:
             rec_scores = ocr_res.get('rec_scores', [])
             rec_boxes = ocr_res.get('rec_boxes', [])
             
-            
             # Process layout regions - filter out text layouts
             layout_blocks = []
             
@@ -45,7 +37,6 @@ class LayoutDetector:
                     bbox_formatted = self._format_bbox_from_coords(coordinate)
                     
                     layout_block = {
-                        'type': label,
                         'type': label,
                         'bbox': bbox_formatted,
                         'confidence': box.get('score', 0.0),
@@ -103,40 +94,9 @@ class LayoutDetector:
                 }
             else:
                 return {'x': 0, 'y': 0, 'width': 0, 'height': 0}
-            if len(coordinate) >= 4:
-                x1, y1, x2, y2 = coordinate[:4]
-                return {
-                    'x': int(x1),
-                    'y': int(y1),
-                    'width': int(x2 - x1),
-                    'height': int(y2 - y1)
-                }
-            else:
-                return {'x': 0, 'y': 0, 'width': 0, 'height': 0}
         except Exception as e:
             print(f"Error formatting bbox from coordinates: {str(e)}")
-            print(f"Error formatting bbox from coordinates: {str(e)}")
             return {'x': 0, 'y': 0, 'width': 0, 'height': 0}
-    
-    def _is_text_in_figure_region(self, text_bbox: Dict[str, int], figure_regions: List[Dict[str, int]]) -> bool:
-        """Check if text block overlaps with any figure-type layout region"""
-        text_x1 = text_bbox['x']
-        text_y1 = text_bbox['y']
-        text_x2 = text_x1 + text_bbox['width']
-        text_y2 = text_y1 + text_bbox['height']
-        
-        for figure_bbox in figure_regions:
-            fig_x1 = figure_bbox['x']
-            fig_y1 = figure_bbox['y']
-            fig_x2 = fig_x1 + figure_bbox['width']
-            fig_y2 = fig_y1 + figure_bbox['height']
-            
-            # Check if text box overlaps with figure region
-            if (text_x1 < fig_x2 and text_x2 > fig_x1 and 
-                text_y1 < fig_y2 and text_y2 > fig_y1):
-                return True
-        
-        return False
     
     def _is_text_in_figure_region(self, text_bbox: Dict[str, int], figure_regions: List[Dict[str, int]]) -> bool:
         """Check if text block overlaps with any figure-type layout region"""
