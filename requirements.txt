@@ -11,7 +11,7 @@ Pillow==10.0.1
 # OCR and Layout Analysis - Python 3.9 compatible
 paddleocr==2.7.3
 paddlepaddle-gpu==2.6.2
-paddlex==3.0.1
+paddlex[ocr]==3.0.1
 
 # Deep Learning - Python 3.9 compatible
 torch==2.2.1

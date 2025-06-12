@@ -89,7 +89,7 @@ def install_requirements():
         "pdf2image==1.16.3",
         "Pillow==10.0.1",
         "paddleocr==2.7.3",
-        "paddlex==3.0.1",
+        "paddlex[ocr]==3.0.1",
         "opencv-python==4.6.0.66",
         "numpy==1.24.4",
         "requests==2.31.0",
