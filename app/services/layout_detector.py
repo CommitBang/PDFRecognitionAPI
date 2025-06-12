@@ -36,7 +36,9 @@ class LayoutDetector:
             
             print(f"Found {len(rec_texts)} OCR texts")
             
-            # Process structured parsing results (use these for layout blocks)
+            # 1. Find figure layouts and add to layout_blocks
+            figure_labels = ['algorithm', 'formula', 'number', 'image', 'figure_caption', 'table', 'table_caption', 'figure_title', 'figure']
+            
             for parsed_block in parsing_res_list:
                 block_label = parsed_block.get('block_label', '')
                 block_content = parsed_block.get('block_content', '')
@@ -51,17 +53,8 @@ class LayoutDetector:
                         'height': int(block_bbox[3] - block_bbox[1])
                     }
                     
-                    # Determine if this is a text block or layout block
-                    if block_label in ['text', 'paragraph_title', 'header']:
-                        # Add as text block
-                        text_block = {
-                            'text': block_content,
-                            'bbox': bbox_formatted,
-                            'confidence': 1.0
-                        }
-                        text_blocks.append(text_block)
-                    else:
-                        # Add as layout block (figure, table, algorithm, etc.)
+                    # Check if this is a figure layout
+                    if block_label in figure_labels:
                         layout_block = {
                             'type': block_label,
                             'bbox': bbox_formatted,
@@ -70,7 +63,7 @@ class LayoutDetector:
                         }
                         layout_blocks.append(layout_block)
             
-            # Also process individual OCR results for any missed text
+            # 2. Process OCR results for text blocks that don't conflict with figure layouts
             for i, text in enumerate(rec_texts):
                 if i < len(rec_scores) and i < len(rec_boxes):
                     # Convert numpy array to list if needed
@@ -87,14 +80,16 @@ class LayoutDetector:
                             'height': int(box[3] - box[1])
                         }
                         
-                        # Check if this text is already covered by parsing results
-                        already_covered = False
-                        for existing_block in text_blocks:
-                            if self._is_text_in_region(bbox_formatted, existing_block['bbox']):
-                                already_covered = True
+                        # Check if this text conflicts with any figure layout bounding box
+                        conflicts_with_figure = False
+                        for idx, layout_block in enumerate(layout_blocks):
+                            if self._boxes_overlap(bbox_formatted, layout_block['bbox']):
+                                conflicts_with_figure = True
+                                layout_blocks[idx]['text'] = layout_blocks[idx]['text'] + ' ' + text
                                 break
                         
-                        if not already_covered:
+                        # Add as text block only if it doesn't conflict with figures
+                        if not conflicts_with_figure and text.strip():
                             text_block = {
                                 'text': text,
                                 'bbox': bbox_formatted,
@@ -155,3 +150,19 @@ class LayoutDetector:
         # Check if text box overlaps with region
         return (text_x1 < region_x2 and text_x2 > region_x1 and 
                 text_y1 < region_y2 and text_y2 > region_y1)
+    
+    def _boxes_overlap(self, bbox1: Dict[str, int], bbox2: Dict[str, int]) -> bool:
+        """Check if two bounding boxes overlap"""
+        x1_1 = bbox1['x']
+        y1_1 = bbox1['y']
+        x2_1 = x1_1 + bbox1['width']
+        y2_1 = y1_1 + bbox1['height']
+        
+        x1_2 = bbox2['x']
+        y1_2 = bbox2['y']
+        x2_2 = x1_2 + bbox2['width']
+        y2_2 = y1_2 + bbox2['height']
+        
+        # Check if boxes overlap
+        return (x1_1 < x2_2 and x2_1 > x1_2 and 
+                y1_1 < y2_2 and y2_1 > y1_2)
