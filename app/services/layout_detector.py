@@ -89,10 +89,8 @@ class LayoutDetector:
         text_lower = text.lower().strip()
         
         # Check for common layout types based on text patterns
-        if any(keyword in text_lower for keyword in ['figure', 'fig.', 'image', 'chart', 'graph']):
+        if any(keyword in text_lower for keyword in ['figure', 'fig.', 'image', 'chart', 'graph', 'table', 'tab.']):
             return 'figure'
-        elif any(keyword in text_lower for keyword in ['table', 'tab.']):
-            return 'table'
         elif len(text) < 100 and bbox['height'] > 20:
             # Likely a title or heading
             return 'paragraph_title'
