@@ -55,8 +55,8 @@ Pdf { // result
 3. 기능별 모듈화를 통해 코드를 간결하게 유지해야합니다.
 4. 레이아웃 분석, OCR, 텍스트 분류에는 다음 모델을 사용해야합니다.
 hugginface에 있는 모델로 transforms 라이브러리를 통해 동작해야합니다. (라이브러리 문서를 읽고 반드시 라이브러리 가이드에 맞춰 사용할 것, 버전확인)
-OCR: TrOCR (https://huggingface.co/docs/transformers/model_doc/trocr)
-레이아웃분석: YOLO-DocLayout 사용 (https://github.com/opendatalab/DocLayout-YOLO?tab=readme-ov-file)
+OCR: PaddleOCR (https://github.com/PaddlePaddle/PaddleOCR)
+레이아웃분석: PaddleOCR 사용 (https://github.com/PaddlePaddle/PaddleOCR)
 텍스트 분류(피규어 참조 분류): https://huggingface.co/microsoft/layoutlmv2-base-uncased
 5. 파일 업로드 용량 제한(예: 50MB)
 6. 예외/에러 처리 및 Swagger에 명시
@@ -66,3 +66,4 @@ OCR: TrOCR (https://huggingface.co/docs/transformers/model_doc/trocr)
 10. host, port, model등 상수부분은 config로 별도 분리하여 나중에 사용자가 설정할 수 있도록 할 것.
 11. 사용하는 파이썬 라이브러리마다 필요 버전조사후 conflict발생하지 않도록 버전 설정
 12. api관련은 모두 app 폴더내에 위치시킬 것
+13. 라이브러리 사용시 반드시 해당 라이브러리 공식 문서를 확인할 것

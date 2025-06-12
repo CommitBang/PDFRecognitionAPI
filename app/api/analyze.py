@@ -1,180 +1,206 @@
-from flask import request, jsonify, send_file
+from flask import request, jsonify
 from flask_restx import Namespace, Resource, fields
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 import os
 import tempfile
-import uuid
 from typing import Dict, Any
-
+from config import Config
 from app.services.pdf_processor import PDFProcessor
 from app.services.layout_detector import LayoutDetector
-from app.services.visualizer import LayoutVisualizer
-from config import Config
 
-# Create namespace
-api = Namespace('analyze', description='PDF Layout Analysis Operations')
+api = Namespace('analyze', description='PDF analysis operations')
 
-# Define models for Swagger documentation
+# API Models for Swagger documentation
 bbox_model = api.model('BoundingBox', {
-    'x': fields.Integer(required=True, description='X coordinate'),
-    'y': fields.Integer(required=True, description='Y coordinate'),
-    'width': fields.Integer(required=True, description='Width'),
-    'height': fields.Integer(required=True, description='Height')
+    'x': fields.Integer(description='X coordinate'),
+    'y': fields.Integer(description='Y coordinate'),
+    'width': fields.Integer(description='Width'),
+    'height': fields.Integer(description='Height')
 })
 
-detection_model = api.model('Detection', {
-    'bbox': fields.Nested(bbox_model, required=True, description='Bounding box'),
-    'confidence': fields.Float(required=True, description='Detection confidence'),
-    'class_id': fields.Integer(required=True, description='Class ID'),
-    'class_name': fields.String(required=True, description='Class name'),
-    'type': fields.String(required=True, description='Element type')
+text_block_model = api.model('TextBlock', {
+    'text': fields.String(description='Extracted text'),
+    'bbox': fields.Nested(bbox_model, description='Bounding box coordinates')
 })
 
-page_info_model = api.model('PageInfo', {
-    'page_index': fields.Integer(required=True, description='Page index'),
-    'width': fields.Float(required=True, description='Page width'),
-    'height': fields.Float(required=True, description='Page height'),
-    'detections': fields.List(fields.Nested(detection_model), description='Layout detections'),
-    'visualization_image': fields.String(description='Base64 encoded visualization image')
+reference_model = api.model('Reference', {
+    'bbox': fields.Nested(bbox_model, description='Bounding box coordinates'),
+    'text': fields.String(description='Reference text'),
+    'figure_id': fields.String(description='Referenced figure ID')
 })
 
-analysis_result_model = api.model('AnalysisResult', {
-    'success': fields.Boolean(required=True, description='Success status'),
-    'message': fields.String(description='Status message'),
-    'pdf_metadata': fields.Raw(description='PDF metadata'),
-    'pages': fields.List(fields.Nested(page_info_model), description='Page analysis results'),
-    'total_pages': fields.Integer(description='Total number of pages')
+figure_model = api.model('Figure', {
+    'bbox': fields.Nested(bbox_model, description='Bounding box coordinates'),
+    'page_idx': fields.Integer(description='Page index'),
+    'figure_id': fields.String(description='Figure ID'),
+    'type': fields.String(description='Figure type')
 })
 
-error_model = api.model('Error', {
-    'success': fields.Boolean(required=True, description='Success status'),
-    'error': fields.String(required=True, description='Error message')
+page_model = api.model('Page', {
+    'index': fields.Integer(description='Page index'),
+    'page_size': fields.List(fields.Integer, description='Page size (width, height)'),
+    'blocks': fields.List(fields.Nested(text_block_model), description='Text blocks'),
+    'references': fields.List(fields.Nested(reference_model), description='References')
 })
 
-# File upload parser
+metadata_model = api.model('Metadata', {
+    'title': fields.String(description='Document title'),
+    'author': fields.String(description='Document author'),
+    'pages': fields.Integer(description='Number of pages')
+})
+
+pdf_result_model = api.model('PDFResult', {
+    'metadata': fields.Nested(metadata_model, description='PDF metadata'),
+    'pages': fields.List(fields.Nested(page_model), description='Pages'),
+    'figures': fields.List(fields.Nested(figure_model), description='Figures')
+})
+
 upload_parser = api.parser()
 upload_parser.add_argument('file', location='files', type=FileStorage, required=True, help='PDF file to analyze')
-upload_parser.add_argument('page_index', type=int, required=False, help='Specific page to analyze (optional)')
 
-@api.route('/upload')
-class PDFUpload(Resource):
+@api.route('/analyze')
+class AnalyzeAPI(Resource):
     @api.expect(upload_parser)
-    @api.doc('upload_pdf')
-    @api.response(200, 'Success', analysis_result_model)
-    @api.response(400, 'Bad Request', error_model)
-    @api.response(500, 'Internal Server Error', error_model)
+    @api.marshal_with(pdf_result_model)
+    @api.doc('analyze_pdf')
+    @api.response(200, 'Success')
+    @api.response(400, 'Bad Request - Invalid file format or size')
+    @api.response(500, 'Internal Server Error')
     def post(self):
-        """
-        Upload and analyze PDF file
-        """
+        """Analyze PDF file for layout, OCR, and figure-reference mapping"""
         try:
-            # Check if file is present
+            # Validate file upload
             if 'file' not in request.files:
-                return {'success': False, 'error': 'No file provided'}, 400
+                api.abort(400, 'No file provided')
             
             file = request.files['file']
             if file.filename == '':
-                return {'success': False, 'error': 'No file selected'}, 400
+                api.abort(400, 'No file selected')
             
             # Validate file extension
             if not self._allowed_file(file.filename):
-                return {'success': False, 'error': 'Only PDF files are allowed'}, 400
+                api.abort(400, 'Only PDF files are allowed')
             
-            # Get optional page index
-            page_index = request.form.get('page_index')
-            if page_index is not None:
-                try:
-                    page_index = int(page_index)
-                except ValueError:
-                    return {'success': False, 'error': 'Invalid page index'}, 400
+            # Validate file size
+            if not self._validate_file_size(file):
+                api.abort(400, f'File size exceeds {Config.MAX_CONTENT_LENGTH // (1024*1024)}MB limit')
             
-            # Save uploaded file
-            filename = secure_filename(file.filename)
-            unique_filename = f"{uuid.uuid4()}_{filename}"
-            upload_path = os.path.join(Config.UPLOAD_FOLDER, unique_filename)
-            file.save(upload_path)
+            # Save uploaded file temporarily
+            temp_pdf_path = self._save_temp_file(file)
             
             try:
-                # Initialize services
-                pdf_processor = PDFProcessor()
-                layout_detector = LayoutDetector()
-                visualizer = LayoutVisualizer()
-                
                 # Process PDF
-                result = self._analyze_pdf(
-                    upload_path, 
-                    pdf_processor, 
-                    layout_detector, 
-                    visualizer,
-                    page_index
-                )
+                result = self._process_pdf(temp_pdf_path)
+                
+                # Cleanup temporary files
+                self._cleanup_files([temp_pdf_path] + result.get('temp_image_paths', []))
+                
+                # Remove temp paths from result before returning
+                if 'temp_image_paths' in result:
+                    del result['temp_image_paths']
                 
                 return result, 200
                 
-            finally:
-                # Clean up uploaded file
-                if os.path.exists(upload_path):
-                    os.remove(upload_path)
-                    
+            except Exception as e:
+                # Cleanup on error
+                self._cleanup_files([temp_pdf_path])
+                api.abort(500, f'Processing error: {str(e)}')
+                
         except Exception as e:
-            return {'success': False, 'error': str(e)}, 500
+            api.abort(500, f'Server error: {str(e)}')
     
     def _allowed_file(self, filename: str) -> bool:
         """Check if file extension is allowed"""
         return '.' in filename and \
                filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
     
-    def _analyze_pdf(self, pdf_path: str, pdf_processor: PDFProcessor, 
-                    layout_detector: LayoutDetector, visualizer: LayoutVisualizer,
-                    specific_page: int = None) -> Dict[str, Any]:
-        """Analyze PDF and return results"""
+    def _validate_file_size(self, file: FileStorage) -> bool:
+        """Validate file size"""
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        return size <= Config.MAX_CONTENT_LENGTH
+    
+    def _save_temp_file(self, file: FileStorage) -> str:
+        """Save uploaded file to temporary location"""
+        filename = secure_filename(file.filename)
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        file.save(temp_file.name)
+        return temp_file.name
+    
+    def _process_pdf(self, pdf_path: str) -> Dict[str, Any]:
+        """Process PDF file and return structured results"""
+        # Initialize services
+        pdf_processor = PDFProcessor(dpi=Config.DPI)
+        layout_detector = LayoutDetector(
+            use_gpu=Config.OCR_USE_GPU,
+            lang=Config.OCR_LANG
+        )
         
-        # Get PDF metadata
-        metadata = pdf_processor.get_pdf_metadata(pdf_path)
+        # Process PDF to get pages and images
+        pdf_result = pdf_processor.process_pdf(pdf_path)
         
-        # Convert PDF to images
-        page_images = pdf_processor.pdf_to_images(pdf_path)
+        if 'error' in pdf_result:
+            raise Exception(pdf_result['error'])
         
-        # Filter to specific page if requested
-        if specific_page is not None:
-            if specific_page < 0 or specific_page >= len(page_images):
-                raise ValueError(f"Page index {specific_page} out of range. PDF has {len(page_images)} pages.")
-            page_images = [page_images[specific_page]]
+        # Process each page for layout and text detection
+        for page in pdf_result['pages']:
+            if page['image_path']:
+                # Detect layout and extract text
+                detection_result = layout_detector.detect_layout_and_text(page['image_path'])
+                
+                # Update page with detection results
+                page['blocks'] = detection_result.get('text_blocks', [])
+                
+                # Extract figures from layout blocks
+                layout_blocks = detection_result.get('layout_blocks', [])
+                page_figures = self._extract_figures_from_layout(layout_blocks, page['index'])
+                pdf_result['figures'].extend(page_figures)
         
-        pages_result = []
+        return pdf_result
+    
+    def _extract_figures_from_layout(self, layout_blocks: list, page_idx: int) -> list:
+        """Extract figure information from layout blocks"""
+        figures = []
+        figure_types = ['figure', 'image', 'chart', 'graph']
         
-        for image_array, page_info in page_images:
-            # Detect layout
-            detections = layout_detector.detect_layout(image_array)
-            
-            # Create visualization
-            viz_image = visualizer.draw_bounding_boxes(image_array, detections)
-            viz_base64 = visualizer.image_to_base64(viz_image)
-            
-            page_result = {
-                'page_index': page_info['page_index'],
-                'width': page_info['width'],
-                'height': page_info['height'],
-                'detections': detections,
-                'visualization_image': viz_base64,
-                'detection_summary': visualizer.create_visualization_summary(detections)
-            }
-            
-            pages_result.append(page_result)
+        for block in layout_blocks:
+            if block.get('type', '').lower() in figure_types:
+                figure = {
+                    'bbox': block['bbox'],
+                    'page_idx': page_idx,
+                    'figure_id': self._extract_figure_id(block.get('text', '')),
+                    'type': block['type']
+                }
+                figures.append(figure)
         
-        return {
-            'success': True,
-            'message': 'PDF analyzed successfully',
-            'pdf_metadata': metadata,
-            'pages': pages_result,
-            'total_pages': metadata['page_count'],
-            'analyzed_pages': len(pages_result)
-        }
-
-@api.route('/health')
-class Health(Resource):
-    @api.doc('health_check')
-    def get(self):
-        """Health check endpoint"""
-        return {'status': 'healthy', 'message': 'PDF Layout Analysis API is running'}
+        return figures
+    
+    def _extract_figure_id(self, text: str) -> str:
+        """Extract figure ID from text"""
+        import re
+        if not text:
+            return ""
+        
+        patterns = [
+            r'fig\.?(?:ure)?\s*(\d+(?:\.\d+)*)',
+            r'图\s*(\d+(?:\.\d+)*)'
+        ]
+        
+        text_lower = text.lower()
+        for pattern in patterns:
+            match = re.search(pattern, text_lower)
+            if match:
+                return match.group(1)
+        
+        return ""
+    
+    def _cleanup_files(self, file_paths: list):
+        """Clean up temporary files"""
+        for file_path in file_paths:
+            try:
+                if file_path and os.path.exists(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Error deleting file {file_path}: {str(e)}")

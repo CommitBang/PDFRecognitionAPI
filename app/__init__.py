@@ -1,33 +1,27 @@
 from flask import Flask, render_template
 from flask_restx import Api
+from app.api.analyze import api as analyze_api
+from app.api.test_site import api as test_api
 from config import Config
-import os
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
     
-    # Create necessary directories
-    os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
-    os.makedirs(Config.TEMP_FOLDER, exist_ok=True)
-    
-    # Initialize Flask-RESTX
     api = Api(
         app,
         version='1.0',
-        title='PDF Layout Analysis API',
-        description='API for PDF layout analysis with figure and reference mapping',
-        doc='/swagger/'
+        title='PDF Recognition API',
+        description='API for PDF layout analysis, OCR, and figure-reference mapping',
+        doc='/api/docs/'
     )
     
-    # Register namespaces
-    from app.api.analyze import api as analyze_ns
-    api.add_namespace(analyze_ns, path='/api/v1')
+    api.add_namespace(analyze_api, path='/api/v1')
+    api.add_namespace(test_api, path='/api/test')
     
-    # Add test page route
+    # Add route for test site
     @app.route('/')
-    @app.route('/test')
-    def test_page():
-        return render_template('test.html')
+    def index():
+        return render_template('index.html')
     
     return app

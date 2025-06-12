@@ -1,28 +1,36 @@
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class Config:
-    # Server Configuration
-    HOST = os.getenv('HOST', '0.0.0.0')
-    PORT = int(os.getenv('PORT', 5000))
-    DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+    # Flask settings
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
-    # File Upload Configuration
-    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
+    # Server settings
+    HOST = os.environ.get('HOST') or '0.0.0.0'
+    PORT = int(os.environ.get('PORT') or 5000)
+    DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+    
+    # File upload settings
+    MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH') or 50) * 1024 * 1024  # 50MB default
+    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'temp_uploads'
     ALLOWED_EXTENSIONS = {'pdf'}
-    UPLOAD_FOLDER = 'uploads'
-    TEMP_FOLDER = 'temp'
     
-    # Model Configuration
-    YOLO_MODEL_PATH = os.getenv('YOLO_MODEL_PATH', 'yolo_doclayout_model.pt')
-    TROCR_MODEL_NAME = os.getenv('TROCR_MODEL_NAME', 'microsoft/trocr-base-printed')
-    LAYOUTLM_MODEL_NAME = os.getenv('LAYOUTLM_MODEL_NAME', 'microsoft/layoutlmv2-base-uncased')
+    # Model settings
+    OCR_MODEL = os.environ.get('OCR_MODEL') or 'paddleocr'
+    LAYOUT_MODEL = os.environ.get('LAYOUT_MODEL') or 'paddleocr'
+    CLASSIFICATION_MODEL = os.environ.get('CLASSIFICATION_MODEL') or 'microsoft/layoutlmv2-base-uncased'
     
-    # Processing Configuration
-    DPI = int(os.getenv('DPI', 300))
-    DEVICE = os.getenv('DEVICE', 'cuda' if os.path.exists('/usr/local/cuda') else 'cpu')
+    # PaddleOCR settings
+    OCR_USE_ANGLE_CLS = os.environ.get('OCR_USE_ANGLE_CLS', 'True').lower() == 'true'
+    OCR_LANG = os.environ.get('OCR_LANG') or 'en'
+    OCR_USE_GPU = os.environ.get('OCR_USE_GPU', 'True').lower() == 'true'
     
-    # Security
-    SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
+    # Processing settings
+    DPI = int(os.environ.get('DPI') or 300)
+    IMAGE_FORMAT = os.environ.get('IMAGE_FORMAT') or 'RGB'
+    
+    # CUDA settings
+    CUDA_DEVICE = os.environ.get('CUDA_DEVICE') or '0'
+    
+    @staticmethod
+    def init_app(app):
+        pass

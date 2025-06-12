@@ -1,237 +1,254 @@
-# PDF Layout Analysis API
+# PDF Recognition API
 
-A Flask-based API for PDF layout analysis using YOLO-DocLayout. This application can detect and visualize different document elements like text, tables, figures, captions, and more.
+A Flask-based REST API for PDF document analysis using PaddleOCR for layout detection and text recognition.
 
 ## Features
 
-- **Layout Detection**: Uses YOLO-DocLayout to detect various document elements
-- **PDF Processing**: Converts PDF pages to images for analysis
-- **Visualization**: Creates annotated images with bounding boxes and labels
-- **REST API**: Flask-RESTX powered API with Swagger documentation
-- **Web Interface**: Simple HTML test page for easy testing
+- **PDF Processing**: Convert PDF pages to images for analysis
+- **Layout Detection**: Identify different document elements (text, figures, tables, etc.)
+- **Text Recognition**: Extract text with bounding box coordinates using OCR
+- **REST API**: RESTful endpoints with Swagger documentation
+- **GPU Acceleration**: Optional GPU support for faster processing
 
-## Detected Elements
+## System Requirements
 
-The system can detect the following layout elements:
-- Caption
-- Footnote
-- Formula
-- List-item
-- Page-footer
-- Page-header
-- Picture
-- Section-header
-- Table
-- Text
-- Title
+### Hardware Requirements
+- **Windows 11** (as specified in requirements)
+- **NVIDIA RTX 3090** with CUDA 12.9
+- **64GB RAM**
+- **AMD Ryzen 7 5700X** (8 cores)
+
+### Software Requirements
+- **Python 3.9** (recommended for best compatibility)
+- **CUDA 12.9** (for GPU acceleration)
+- **Anaconda** (recommended for environment management)
 
 ## Installation
 
-1. **Clone or download the project**
-2. **Install Python dependencies with GPU support**:
-   
-   **Option A: Manual Installation**
-   ```bash
-   # Install PyTorch with CUDA 12.1 support first
-   pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
-   
-   # Install other requirements
-   pip install -r requirements.txt
-   ```
-   
-   **Option B: Use setup script (recommended)**
-   ```bash
-   python setup.py
-   ```
-   
-3. **DocLayout-YOLO Model Setup**:
-   
-   **Option A: Automatic from Hugging Face (recommended)**
-   - No manual download needed! The system will automatically download the pre-trained model from Hugging Face: `juliozhao/DocLayout-YOLO-DocStructBench`
-   
-   **Option B: Manual Download**
-   ```bash
-   python download_model.py
-   ```
-   
-   **Option C: Manual from GitHub**
-   - Visit: https://github.com/opendatalab/DocLayout-YOLO
-   - Download the model file and place it in the `models/` directory as `yolo_doclayout_model.pt`
-   
-   **Note**: The system will automatically fallback to YOLOv8 for general object detection if DocLayout models are not available.
-
-## Configuration
-
-Copy `.env.example` to `.env` and modify as needed:
-
+### 1. Clone Repository
 ```bash
-cp .env.example .env
+git clone <repository-url>
+cd pdfrec
 ```
 
-Key configuration options:
-- `HOST`: Server host (default: 0.0.0.0)
-- `PORT`: Server port (default: 5000)
-- `DEVICE`: Processing device (cuda/cpu)
-- `YOLO_MODEL_PATH`: Path to YOLO model file
+### 2. Create Virtual Environment
+```bash
+# Using Anaconda (recommended)
+conda create -n pdfrec python=3.9
+conda activate pdfrec
+
+# Or using venv
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Linux/Mac
+source venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+#### Option A: Using setup.py (Recommended)
+```bash
+python setup.py install
+```
+
+#### Option B: Using pip
+```bash
+pip install -r requirements.txt
+```
+
+#### Option C: For CPU-only installation (no GPU)
+```bash
+# Install CPU-only PyTorch first
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+```
+
+### 4. Environment Configuration (Optional)
+Create a `.env` file in the project root:
+```env
+# Server settings
+HOST=0.0.0.0
+PORT=5000
+DEBUG=False
+
+# File upload settings
+MAX_CONTENT_LENGTH=50  # MB
+UPLOAD_FOLDER=temp_uploads
+
+# OCR settings
+OCR_USE_GPU=True
+OCR_LANG=en
+DPI=300
+
+# CUDA settings
+CUDA_DEVICE=0
+```
 
 ## Usage
 
-### Start the Server
-
+### 1. Start the Server
 ```bash
 python main.py
 ```
 
-The server will start on `http://localhost:5000`
+The server will start at `http://localhost:5000`
 
-### API Endpoints
+### 2. API Documentation
+Access Swagger documentation at: `http://localhost:5000/api/docs/`
 
-#### 1. Upload and Analyze PDF
-```
-POST /api/v1/analyze/upload
-```
+### 3. API Endpoints
 
-**Parameters:**
-- `file`: PDF file (multipart/form-data)
-- `page_index`: Optional page index to analyze specific page
+#### POST /api/v1/analyze
+Upload and analyze a PDF file.
+
+**Request:**
+- Method: POST
+- Content-Type: multipart/form-data
+- Body: PDF file (max 50MB)
 
 **Response:**
 ```json
 {
-  "success": true,
-  "message": "PDF analyzed successfully",
-  "pdf_metadata": {
+  "metadata": {
     "title": "Document Title",
-    "page_count": 10
+    "author": "Author Name",
+    "pages": 5
   },
   "pages": [
     {
-      "page_index": 0,
-      "width": 595.0,
-      "height": 842.0,
-      "detections": [
+      "index": 0,
+      "page_size": [595, 842],
+      "blocks": [
         {
-          "bbox": {"x": 100, "y": 200, "width": 300, "height": 50},
-          "confidence": 0.95,
-          "class_name": "Text",
-          "type": "Text"
+          "text": "Extracted text content",
+          "bbox": {
+            "x": 100,
+            "y": 200,
+            "width": 150,
+            "height": 20
+          }
         }
       ],
-      "visualization_image": "data:image/png;base64,..."
+      "references": []
+    }
+  ],
+  "figures": [
+    {
+      "bbox": {
+        "x": 100,
+        "y": 300,
+        "width": 200,
+        "height": 150
+      },
+      "page_idx": 0,
+      "figure_id": "1.1",
+      "type": "figure"
     }
   ]
 }
 ```
 
-#### 2. Health Check
-```
-GET /api/v1/analyze/health
-```
-
-### Web Interface
-
-- **Test Page**: `http://localhost:5000/` - Upload and test PDFs
-- **Swagger UI**: `http://localhost:5000/swagger/` - API documentation
-
-## Project Structure
-
-```
-pdfrec/
-├── app/
-│   ├── __init__.py              # Flask app factory
-│   ├── api/
-│   │   ├── __init__.py
-│   │   └── analyze.py           # API endpoints
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── pdf_processor.py     # PDF processing
-│   │   ├── layout_detector.py   # YOLO layout detection
-│   │   └── visualizer.py        # Visualization functions
-│   └── templates/
-│       └── test.html            # Test page
-├── models/                      # Model files directory
-├── uploads/                     # Temporary upload directory
-├── temp/                       # Temporary processing files
-├── config.py                   # Configuration
-├── main.py                     # Application entry point
-├── requirements.txt            # Python dependencies
-├── setup.py                    # Setup script
-├── .env.example               # Environment variables template
-└── README.md                  # This file
-```
-
-## Requirements
-
-### System Requirements
-- Python 3.10+
-- CUDA 12.9 (for GPU acceleration)
-- 8GB+ RAM recommended
-
-### Python Dependencies
-- Flask 2.3.3
-- flask-restx 1.2.0
-- PyMuPDF 1.23.8
-- Pillow 10.1.0
-- opencv-python 4.8.1.78
-- ultralytics 8.0.206
-- torch 2.0.1
-- transformers 4.35.2
-
-## API Usage Examples
-
-### Using curl
+### 4. Example Usage with curl
 ```bash
-# Analyze entire PDF
-curl -X POST -F "file=@document.pdf" http://localhost:5000/api/v1/analyze/upload
-
-# Analyze specific page (page 0)
-curl -X POST -F "file=@document.pdf" -F "page_index=0" http://localhost:5000/api/v1/analyze/upload
+curl -X POST \
+  http://localhost:5000/api/v1/analyze \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'file=@your_document.pdf'
 ```
 
-### Using Python requests
+### 5. Example Usage with Python
 ```python
 import requests
 
-# Upload and analyze PDF
-with open('document.pdf', 'rb') as f:
-    files = {'file': f}
-    response = requests.post('http://localhost:5000/api/v1/analyze/upload', files=files)
-    result = response.json()
-    
-if result['success']:
-    print(f"Analyzed {len(result['pages'])} pages")
-    for page in result['pages']:
-        print(f"Page {page['page_index']}: {len(page['detections'])} elements detected")
+url = "http://localhost:5000/api/v1/analyze"
+files = {"file": open("your_document.pdf", "rb")}
+
+response = requests.post(url, files=files)
+result = response.json()
+
+print(f"Detected {len(result['figures'])} figures")
+print(f"Extracted text from {len(result['pages'])} pages")
 ```
+
+## Configuration
+
+All configuration options are available in `config.py` and can be overridden using environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| HOST | 0.0.0.0 | Server host |
+| PORT | 5000 | Server port |
+| DEBUG | False | Debug mode |
+| MAX_CONTENT_LENGTH | 50MB | Maximum file upload size |
+| OCR_USE_GPU | True | Enable GPU acceleration |
+| OCR_LANG | en | OCR language |
+| DPI | 300 | Image conversion DPI |
 
 ## Troubleshooting
 
-1. **"YOLOv10.__init_subclass__() takes no keyword arguments" error**: 
+### Common Issues
+
+1. **PyMuPDF Installation Error**
    ```bash
-   python fix_doclayout_compatibility.py
-   ```
-   Or manually:
-   ```bash
-   pip uninstall doclayout-yolo huggingface-hub -y
-   pip install huggingface-hub==0.16.4
-   pip install doclayout-yolo==0.0.4
+   # If you encounter PyMuPDF errors, try:
+   pip install PyMuPDF==1.20.2
    ```
 
-2. **"'Conv' object has no attribute 'bn'" error**: 
-   ```bash
-   python fix_pytorch_compatibility.py
-   ```
-   Or manually:
-   ```bash
-   pip install ultralytics==8.2.0 --upgrade
-   pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
-   ```
+2. **CUDA Out of Memory**
+   - Reduce DPI setting in config
+   - Process smaller PDF files
+   - Use CPU-only mode by setting `OCR_USE_GPU=False`
 
-3. **Model not found error**: The system will automatically download models from Hugging Face, or you can manually place them in `models/yolo_doclayout_model.pt`
-4. **CUDA out of memory**: Set `DEVICE=cpu` in `.env` file
-5. **File upload errors**: Check file size limit (50MB default)
-6. **Permission errors**: Ensure write permissions for `uploads/` and `temp/` directories
+3. **PaddleOCR Model Download**
+   - On first run, PaddleOCR will download models automatically
+   - Ensure stable internet connection
+   - Models are cached locally after download
+
+4. **Permission Errors**
+   - Ensure write permissions for `temp_uploads` directory
+   - Check firewall settings for the specified port
+
+### Performance Optimization
+
+1. **GPU Acceleration**: Ensure CUDA is properly installed and GPU memory is sufficient
+2. **Memory Usage**: For large PDFs, consider processing page by page
+3. **File Size**: Optimize PDF files before upload for better performance
+
+## Development
+
+### Running Tests
+```bash
+pytest tests/
+```
+
+### Adding Features
+1. Add new services in `app/services/`
+2. Create API endpoints in `app/api/`
+3. Update configuration in `config.py`
+4. Add tests in `tests/`
+
+## API Response Format
+
+The API returns structured data matching the specified format:
+
+- **Reference**: Text references to figures with bounding boxes
+- **Figure**: Detected figures with IDs and locations
+- **TextBlock**: Text content with coordinates
+- **Page**: Page-level information and content
+- **Pdf**: Complete document analysis results
 
 ## License
 
-This project is for educational and research purposes.
+[Add your license information here]
+
+## Contributing
+
+[Add contribution guidelines here]
+
+## Support
+
+For issues and questions:
+1. Check the troubleshooting section
+2. Review the API documentation
+3. Create an issue in the repository

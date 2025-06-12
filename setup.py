@@ -1,92 +1,244 @@
 #!/usr/bin/env python3
 """
-Setup script for PDF Layout Analysis API
+PDF Recognition API Setup Script
+
+This setup script provides an easy way to install the PDF Recognition API
+with all required dependencies for Python 3.9 compatibility.
 """
 
-import os
 import sys
 import subprocess
+import os
+from pathlib import Path
+
+def check_python_version():
+    """Check if Python version is compatible"""
+    if sys.version_info < (3, 9):
+        print("Error: Python 3.9 or higher is required")
+        print(f"Current version: {sys.version}")
+        sys.exit(1)
+    
+    if sys.version_info >= (3, 12):
+        print("Warning: Python 3.12+ may have compatibility issues with some dependencies")
+        print("Python 3.9-3.11 is recommended for best compatibility")
+
+def run_command(command, description):
+    """Run a command and handle errors"""
+    print(f"\n{'='*50}")
+    print(f"STEP: {description}")
+    print(f"Running: {command}")
+    print(f"{'='*50}")
+    
+    try:
+        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+        if e.stdout:
+            print(f"STDOUT: {e.stdout}")
+        if e.stderr:
+            print(f"STDERR: {e.stderr}")
+        return False
+
+def check_cuda():
+    """Check if CUDA is available"""
+    try:
+        result = subprocess.run("nvidia-smi", shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            print("CUDA detected - GPU acceleration will be available")
+            return True
+        else:
+            print("CUDA not detected - will use CPU-only installation")
+            return False
+    except:
+        print("Could not check CUDA availability - will use CPU-only installation")
+        return False
+
+def install_pytorch(use_gpu=True):
+    """Install PyTorch with appropriate backend"""
+    if use_gpu:
+        print("Installing PyTorch with CUDA support...")
+        command = "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118"
+    else:
+        print("Installing PyTorch CPU-only version...")
+        command = "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu"
+    
+    return run_command(command, "Installing PyTorch")
+
+def install_paddlepaddle(use_gpu=True):
+    """Install PaddlePaddle with appropriate backend"""
+    if use_gpu:
+        print("Installing PaddlePaddle with GPU support...")
+        command = "pip install paddlepaddle-gpu==2.5.2"
+    else:
+        print("Installing PaddlePaddle CPU-only version...")
+        command = "pip install paddlepaddle==2.5.2"
+    
+    return run_command(command, "Installing PaddlePaddle")
+
+def install_requirements():
+    """Install remaining requirements"""
+    # Create requirements without PyTorch and PaddlePaddle (already installed)
+    requirements_without_torch = [
+        "Flask==2.3.3",
+        "flask-restx==1.3.0", 
+        "Werkzeug==2.3.7",
+        "PyMuPDF==1.20.2",
+        "pdf2image==1.16.3",
+        "Pillow==10.0.1",
+        "paddleocr==2.7.3",
+        "transformers==4.35.2",
+        "tokenizers==0.15.0",
+        "opencv-python==4.8.1.78",
+        "numpy==1.24.4",
+        "requests==2.31.0",
+        "python-dotenv==1.0.0",
+        "gunicorn==21.2.0",
+        "pytest==7.4.3",
+        "pytest-flask==1.3.0"
+    ]
+    
+    temp_requirements = "temp_requirements.txt"
+    with open(temp_requirements, 'w') as f:
+        f.write('\n'.join(requirements_without_torch))
+    
+    success = run_command(f"pip install -r {temp_requirements}", "Installing remaining dependencies")
+    
+    # Clean up temp file
+    if os.path.exists(temp_requirements):
+        os.remove(temp_requirements)
+    
+    return success
 
 def create_directories():
     """Create necessary directories"""
     directories = [
-        'uploads',
-        'temp',
-        'models'
+        "temp_uploads",
+        "logs"
     ]
     
     for directory in directories:
-        os.makedirs(directory, exist_ok=True)
+        Path(directory).mkdir(exist_ok=True)
         print(f"Created directory: {directory}")
 
-def download_yolo_model():
-    """Download YOLO-DocLayout model"""
-    print("\nSetting up YOLO models...")
-    try:
-        subprocess.check_call([sys.executable, 'download_model.py'])
-    except subprocess.CalledProcessError as e:
-        print(f"Error running model download script: {e}")
-        print("You can manually run: python download_model.py")
-    except FileNotFoundError:
-        print("download_model.py not found. Skipping model download.")
-        print("Note: The system will auto-download YOLOv8 as fallback when first used.")
+def download_models():
+    """Download PaddleOCR models"""
+    print("\nDownloading PaddleOCR models (this may take a while)...")
+    test_script = """
+import sys
+sys.path.append('.')
+try:
+    from paddleocr import PaddleOCR
+    print("Initializing PaddleOCR to download models...")
+    ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
+    print("PaddleOCR models downloaded successfully!")
+except Exception as e:
+    print(f"Warning: Could not download models: {e}")
+    print("Models will be downloaded on first API call")
+"""
+    
+    with open("test_models.py", "w") as f:
+        f.write(test_script)
+    
+    run_command("python test_models.py", "Downloading PaddleOCR models")
+    
+    # Clean up test file
+    if os.path.exists("test_models.py"):
+        os.remove("test_models.py")
 
-def install_requirements():
-    """Install Python requirements"""
-    try:
-        # Install PyTorch with CUDA support first
-        print("Installing PyTorch with CUDA 12.1 support...")
-        subprocess.check_call([
-            sys.executable, '-m', 'pip', 'install', 
-            'torch==2.1.0', 'torchvision==0.16.0', 'torchaudio==2.1.0',
-            '--index-url', 'https://download.pytorch.org/whl/cu121'
-        ])
-        print("PyTorch with CUDA installed successfully")
-        
-        # Install other requirements
-        print("Installing other requirements...")
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
-        print("All requirements installed successfully")
-        
-    except subprocess.CalledProcessError as e:
-        print(f"Error installing PyTorch with CUDA: {e}")
-        print("Trying fallback to CPU version...")
-        try:
-            # Fallback to CPU version if GPU installation fails
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'torch', 'torchvision', 'torchaudio'])
-            # Install other requirements
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
-            print("Fallback CPU installation completed")
-        except subprocess.CalledProcessError as e2:
-            print(f"Fallback installation also failed: {e2}")
+def test_installation():
+    """Test the installation"""
+    print("\nTesting installation...")
+    test_script = """
+import sys
+sys.path.append('.')
+try:
+    from app import create_app
+    app = create_app()
+    print("✓ Flask app creation successful")
+    
+    from app.services.pdf_processor import PDFProcessor
+    print("✓ PDF processor import successful")
+    
+    from app.services.layout_detector import LayoutDetector
+    print("✓ Layout detector import successful")
+    
+    print("✓ All imports successful - installation appears to be working!")
+except Exception as e:
+    print(f"✗ Installation test failed: {e}")
+    sys.exit(1)
+"""
+    
+    with open("test_install.py", "w") as f:
+        f.write(test_script)
+    
+    success = run_command("python test_install.py", "Testing installation")
+    
+    # Clean up test file
+    if os.path.exists("test_install.py"):
+        os.remove("test_install.py")
+    
+    return success
 
 def main():
-    print("Setting up PDF Layout Analysis API...")
+    """Main installation function"""
+    print("PDF Recognition API Setup")
+    print("=" * 50)
     
-    # Create directories
+    # Check Python version
+    check_python_version()
+    
+    # Check for CUDA
+    use_gpu = check_cuda()
+    
+    # Ask user preference for GPU usage
+    if use_gpu:
+        choice = input("\nGPU detected. Install with GPU support? (y/n) [y]: ").lower()
+        use_gpu = choice != 'n'
+    
+    print(f"\nInstalling with {'GPU' if use_gpu else 'CPU'} support...")
+    
+    # Update pip
+    print("\nUpdating pip...")
+    run_command("python -m pip install --upgrade pip", "Updating pip")
+    
+    # Install PyTorch first
+    if not install_pytorch(use_gpu):
+        print("Failed to install PyTorch. Aborting.")
+        sys.exit(1)
+    
+    # Install PaddlePaddle
+    if not install_paddlepaddle(use_gpu):
+        print("Failed to install PaddlePaddle. Aborting.")
+        sys.exit(1)
+    
+    # Install other requirements
+    if not install_requirements():
+        print("Failed to install some dependencies. Please check the output above.")
+        sys.exit(1)
+    
+    # Create necessary directories
     create_directories()
     
-    # Install requirements
-    install_requirements()
+    # Download models (optional)
+    download_choice = input("\nDownload PaddleOCR models now? (y/n) [y]: ").lower()
+    if download_choice != 'n':
+        download_models()
     
-    # Model download instructions
-    download_yolo_model()
-    
-    # Create .env file if it doesn't exist
-    if not os.path.exists('.env'):
-        if os.path.exists('.env.example'):
-            import shutil
-            shutil.copy('.env.example', '.env')
-            print("Created .env file from .env.example")
-        else:
-            print("Please create a .env file based on .env.example")
-    
-    print("\nSetup completed!")
-    print("To run the application:")
-    print("python main.py")
-    print("\nAPI will be available at:")
-    print("- Test page: http://localhost:5000/")
-    print("- Swagger UI: http://localhost:5000/swagger/")
+    # Test installation
+    if test_installation():
+        print("\n" + "=" * 50)
+        print("INSTALLATION SUCCESSFUL!")
+        print("=" * 50)
+        print("\nTo start the server, run:")
+        print("  python main.py")
+        print("\nAPI documentation will be available at:")
+        print("  http://localhost:5000/api/docs/")
+        print("\nFor troubleshooting, see README.md")
+    else:
+        print("\nInstallation completed with warnings. Check the output above.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

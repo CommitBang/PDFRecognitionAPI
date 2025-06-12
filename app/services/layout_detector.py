@@ -1,198 +1,100 @@
-import numpy as np
-import cv2
-from typing import List, Dict, Tuple
-from config import Config
-import os
-
-try:
-    from doclayout_yolo import YOLOv10
-    DOCLAYOUT_AVAILABLE = True
-    print("doclayout-yolo package loaded successfully")
-except ImportError as e:
-    print(f"doclayout-yolo not available: {e}")
-    DOCLAYOUT_AVAILABLE = False
-    YOLOv10 = None
-except Exception as e:
-    print(f"Error loading doclayout-yolo (likely version compatibility issue): {e}")
-    print("Falling back to ultralytics YOLO")
-    DOCLAYOUT_AVAILABLE = False
-    YOLOv10 = None
-
-from ultralytics import YOLO
+from paddleocr import PaddleOCR
+from typing import List, Dict, Any
 
 class LayoutDetector:
-    def __init__(self):
-        self.model = None
-        self.model_path = Config.YOLO_MODEL_PATH
-        self.device = Config.DEVICE
-        self.using_doclayout = False
-        self.load_model()
-        
-        # DocLayout-YOLO class names based on the repository
-        self.class_names = {
-            0: 'Caption',
-            1: 'Footnote', 
-            2: 'Formula',
-            3: 'List-item',
-            4: 'Page-footer',
-            5: 'Page-header',
-            6: 'Picture',
-            7: 'Section-header',
-            8: 'Table',
-            9: 'Text',
-            10: 'Title'
-        }
+    def __init__(self, use_gpu: bool = True, lang: str = 'en'):
+        self.ocr = PaddleOCR(
+            use_angle_cls=True, 
+            lang=lang,
+            use_gpu=use_gpu,
+            show_log=False,
+            use_doc_orientation_classify=True
+        )
     
-    def load_model(self):
-        """Load YOLO-DocLayout model with fallback handling"""
-        model_loaded = False
-        
-        # Only try DocLayout if the package is available
-        if DOCLAYOUT_AVAILABLE:
-            # Try using pre-trained DocLayout model from Hugging Face (recommended)
-            try:
-                print("Loading pre-trained DocLayout-YOLO model from Hugging Face...")
-                self.model = YOLOv10.from_pretrained("juliozhao/DocLayout-YOLO-DocStructBench")
-                model_loaded = True
-                print("DocLayout YOLO model loaded successfully from Hugging Face")
-                self.using_doclayout = True
-                return
-            except Exception as e:
-                print(f"Error loading DocLayout model from Hugging Face: {e}")
-                print("Trying local model file...")
-            
-            # Try using local doclayout-yolo package with local model file
-            if os.path.exists(self.model_path):
-                try:
-                    print(f"Loading DocLayout model using doclayout-yolo package from {self.model_path}")
-                    self.model = YOLOv10(self.model_path)
-                    model_loaded = True
-                    print("DocLayout YOLO model loaded successfully using doclayout-yolo package")
-                    self.using_doclayout = True
-                    return
-                except Exception as e:
-                    print(f"Error loading DocLayout model with doclayout-yolo package: {e}")
-                    print("Falling back to ultralytics YOLO...")
-        else:
-            print("doclayout-yolo package not available, using ultralytics YOLO")
-        
-        # Try ultralytics YOLO if doclayout-yolo failed or not available
-        if os.path.exists(self.model_path):
-            try:
-                print(f"Loading YOLO-DocLayout model using ultralytics from {self.model_path}")
-                self.model = YOLO(self.model_path)
-                model_loaded = True
-                print("YOLO-DocLayout model loaded successfully using ultralytics")
-                self.using_doclayout = False
-                return
-            except Exception as e:
-                print(f"Error loading DocLayout model with ultralytics: {e}")
-                print("This usually indicates a PyTorch version compatibility issue")
-        
-        # Try alternative models if DocLayout failed
-        print("Trying standard YOLO models as fallback...")
-        alternative_models = [
-            ('yolov8n.pt', 'YOLOv8 Nano'),
-            ('yolov8s.pt', 'YOLOv8 Small'),
-            ('yolov8m.pt', 'YOLOv8 Medium')
-        ]
-        
-        for model_name, description in alternative_models:
-            try:
-                print(f"Trying {description} model...")
-                self.model = YOLO(model_name)  # Will auto-download if needed
-                
-                print(f"{description} model loaded successfully")
-                print("Note: Using general object detection instead of document layout detection")
-                model_loaded = True
-                self.using_doclayout = False
-                break
-                
-            except Exception as e:
-                print(f"Error loading {description}: {e}")
-                continue
-        
-        if not model_loaded:
-            raise Exception("Could not load any YOLO model. Please check PyTorch installation and compatibility.")
-    
-    def detect_layout(self, image: np.ndarray) -> List[Dict]:
-        """
-        Detect layout elements in image
-        Returns list of detected elements with bounding boxes and labels
-        """
+    def detect_layout_and_text(self, image_path: str) -> Dict[str, Any]:
+        """Detect layout and extract text from image using PaddleOCR"""
         try:
-            if self.model is None:
-                raise Exception("Model not loaded")
+            # Run OCR with layout detection
+            result = self.ocr.ocr(image_path, cls=True)
             
-            # Ensure image is in correct format
-            if len(image.shape) == 3 and image.shape[2] == 4:  # RGBA
-                image = image[:, :, :3]  # Convert to RGB
+            if not result or not result[0]:
+                return {'text_blocks': [], 'layout_blocks': []}
             
-            # Run inference based on model type
-            try:
-                if self.using_doclayout:
-                    # Use DocLayout-YOLO specific parameters
-                    results = self.model.predict(
-                        image,
-                        imgsz=1024,  # Recommended image size for DocLayout
-                        conf=0.2,    # Recommended confidence threshold
-                        device=self.device
-                    )
-                else:
-                    # Use standard YOLO parameters
-                    results = self.model(image, device=self.device, verbose=False)
+            text_blocks = []
+            layout_blocks = []
+            
+            # Process OCR results - result[0] contains the detection results
+            for line in result[0]:
+                if line:
+                    # line[0] contains bbox coordinates as [[x1,y1], [x2,y2], ...]
+                    # line[1] contains (text, confidence)
+                    bbox_points = line[0]
+                    text_info = line[1]
                     
-            except AttributeError as e:
-                if "'Conv' object has no attribute 'bn'" in str(e):
-                    raise Exception("PyTorch/YOLO version compatibility issue. Try: pip install doclayout-yolo==0.0.4")
-                else:
-                    raise Exception(f"Model inference error: {str(e)}")
+                    text = text_info[0] if text_info else ""
+                    confidence = text_info[1] if text_info and len(text_info) > 1 else 0.0
+                    
+                    # Convert bbox from points to x,y,width,height format
+                    bbox_formatted = self._format_bbox(bbox_points)
+                    
+                    # Create text block
+                    text_block = {
+                        'text': text,
+                        'bbox': bbox_formatted,
+                        'confidence': confidence
+                    }
+                    text_blocks.append(text_block)
+                    
+                    # Create layout block with type classification
+                    layout_type = self._classify_layout_type(text, bbox_formatted)
+                    layout_block = {
+                        'type': layout_type,
+                        'bbox': bbox_formatted,
+                        'text': text,
+                        'confidence': confidence
+                    }
+                    layout_blocks.append(layout_block)
             
-            detections = []
-            for result in results:
-                boxes = result.boxes
-                if boxes is not None and len(boxes) > 0:
-                    for i in range(len(boxes)):
-                        try:
-                            # Get bounding box coordinates (xyxy format)
-                            x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy()
-                            confidence = boxes.conf[i].cpu().numpy()
-                            class_id = int(boxes.cls[i].cpu().numpy())
-                            
-                            # Validate coordinates
-                            if x2 <= x1 or y2 <= y1:
-                                continue
-                            
-                            # Convert to our format
-                            detection = {
-                                'bbox': {
-                                    'x': int(x1),
-                                    'y': int(y1),
-                                    'width': int(x2 - x1),
-                                    'height': int(y2 - y1)
-                                },
-                                'confidence': float(confidence),
-                                'class_id': class_id,
-                                'class_name': self.class_names.get(class_id, f'Object_{class_id}'),
-                                'type': self.class_names.get(class_id, f'Object_{class_id}')
-                            }
-                            
-                            detections.append(detection)
-                        except Exception as box_error:
-                            print(f"Error processing detection {i}: {box_error}")
-                            continue
-            
-            return detections
+            return {
+                'text_blocks': text_blocks,
+                'layout_blocks': layout_blocks
+            }
             
         except Exception as e:
-            raise Exception(f"Error in layout detection: {str(e)}")
+            print(f"Error in layout detection: {str(e)}")
+            return {'text_blocks': [], 'layout_blocks': [], 'error': str(e)}
     
-    def filter_figure_elements(self, detections: List[Dict]) -> List[Dict]:
-        """Filter detections to get figure-related elements"""
-        figure_types = ['Picture', 'Formula', 'Table', 'Caption']
-        return [det for det in detections if det['class_name'] in figure_types]
+    def _format_bbox(self, bbox_points: List[List[float]]) -> Dict[str, int]:
+        """Convert bbox from list of points to x, y, width, height format"""
+        try:
+            # bbox_points is [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+            x_coords = [point[0] for point in bbox_points]
+            y_coords = [point[1] for point in bbox_points]
+            
+            x = int(min(x_coords))
+            y = int(min(y_coords))
+            width = int(max(x_coords) - min(x_coords))
+            height = int(max(y_coords) - min(y_coords))
+            
+            return {'x': x, 'y': y, 'width': width, 'height': height}
+        except Exception as e:
+            print(f"Error formatting bbox: {str(e)}")
+            return {'x': 0, 'y': 0, 'width': 0, 'height': 0}
     
-    def get_text_blocks(self, detections: List[Dict]) -> List[Dict]:
-        """Filter detections to get text blocks"""
-        text_types = ['Text', 'Caption', 'Title', 'Section-header']
-        return [det for det in detections if det['class_name'] in text_types]
+    def _classify_layout_type(self, text: str, bbox: Dict[str, int]) -> str:
+        """Basic layout type classification based on text content"""
+        if not text:
+            return 'text'
+        
+        text_lower = text.lower().strip()
+        
+        # Check for common layout types based on text patterns
+        if any(keyword in text_lower for keyword in ['figure', 'fig.', 'image', 'chart', 'graph']):
+            return 'figure'
+        elif any(keyword in text_lower for keyword in ['table', 'tab.']):
+            return 'table'
+        elif len(text) < 100 and bbox['height'] > 20:
+            # Likely a title or heading
+            return 'paragraph_title'
+        else:
+            return 'text'
