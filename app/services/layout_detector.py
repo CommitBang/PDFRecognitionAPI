@@ -17,7 +17,7 @@ class LayoutDetector:
                 return {'text_blocks': [], 'layout_blocks': []}
         
             # Access the result dict - structure has 'res' key containing all data
-            result = output_list[0]  # First result contains the data
+            result = output_list[0].json  # First result contains the data
             if not isinstance(result, dict) or 'res' not in result:
                 return {'text_blocks': [], 'layout_blocks': []}
             
