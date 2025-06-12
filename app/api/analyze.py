@@ -8,6 +8,7 @@ from typing import Dict, Any
 from config import Config
 from app.services.pdf_processor import PDFProcessor
 from app.services.layout_detector import LayoutDetector
+from app.services.reference_extractor import ReferenceExtractor
 
 api = Namespace('analyze', description='PDF analysis operations')
 
@@ -137,6 +138,7 @@ class AnalyzeAPI(Resource):
             use_gpu=Config.OCR_USE_GPU,
             lang=Config.OCR_LANG
         )
+        reference_extractor = ReferenceExtractor()
         
         # Process PDF to get pages and images
         pdf_result = pdf_processor.process_pdf(pdf_path)
@@ -152,6 +154,10 @@ class AnalyzeAPI(Resource):
                 
                 # Update page with detection results
                 page['blocks'] = detection_result.get('text_blocks', [])
+                
+                # Extract references from text blocks
+                references = reference_extractor.extract_references(page['blocks'])
+                page['references'] = references
                 
                 # Extract figures from layout blocks
                 layout_blocks = detection_result.get('layout_blocks', [])
