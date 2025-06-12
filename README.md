@@ -29,14 +29,21 @@ The system can detect the following layout elements:
 
 1. **Clone or download the project**
 2. **Install Python dependencies with GPU support**:
+   
+   **Option A: Manual Installation**
    ```bash
-   # For CUDA 12.1 (RTX 3090 compatible)
-   pip install --extra-index-url https://download.pytorch.org/whl/cu121 -r requirements.txt
+   # Install PyTorch with CUDA 12.1 support first
+   pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
+   
+   # Install other requirements
+   pip install -r requirements.txt
    ```
-   Or use the setup script:
+   
+   **Option B: Use setup script (recommended)**
    ```bash
    python setup.py
    ```
+   
 3. **Download YOLO-DocLayout model**:
    - Visit: https://github.com/opendatalab/DocLayout-YOLO
    - Download the model file and place it in the `models/` directory as `yolo_doclayout_model.pt`
