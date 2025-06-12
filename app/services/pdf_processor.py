@@ -6,6 +6,10 @@ from pdf2image import convert_from_path
 from paddleocr import PPStructureV3
 import tempfile
 import shutil
+from app.services.layout_detector import LayoutDetector
+from app.services.figure_id_generator import FigureIDGenerator
+from app.services.reference_extractor import ReferenceExtractor
+from app.services.figure_mapper import FigureMapper
 
 class PDFProcessor:
     def __init__(self, dpi: int = 300, use_gpu: bool = True, lang: str = 'en'):
@@ -18,6 +22,12 @@ class PDFProcessor:
             use_textline_orientation=False,
             device='gpu' if use_gpu else 'cpu'
         )
+        
+        # Initialize services
+        self.layout_detector = LayoutDetector(self.pp_structure)
+        self.figure_id_generator = FigureIDGenerator()
+        self.reference_extractor = ReferenceExtractor()
+        self.figure_mapper = FigureMapper()
     
     def extract_metadata(self, pdf_path: str) -> Dict[str, Any]:
         """Extract metadata from PDF file"""
@@ -106,8 +116,7 @@ class PDFProcessor:
                 'metadata': metadata,
                 'pages': [],
                 'figures': [],
-                'temp_image_paths': [],
-                'pp_structure': self.pp_structure  # Pass PP-StructureV3 instance
+                'temp_image_paths': []
             }
             
             # Process each page
@@ -118,12 +127,35 @@ class PDFProcessor:
                 if temp_image_path:
                     result['temp_image_paths'].append(temp_image_path)
                 
+                # Step 2: Detect layout and text from current page
+                detection_result = self.layout_detector.detect_layout_and_text(temp_image_path)
+                text_blocks = detection_result.get('text_blocks', [])
+                layout_blocks = detection_result.get('layout_blocks', [])
+                
+                # Step 3: Generate figure IDs for layout blocks and save to figures
+                for layout_block in layout_blocks:
+                    figure_info = self.figure_id_generator.generate_figure_info(
+                        layout_block, 
+                        page_idx
+                    )
+                    result['figures'].append(figure_info)
+                
+                # Step 4: Extract references from text blocks
+                references = self.reference_extractor.extract_references(text_blocks)
+                
+                # Step 5-7: Map references to figures (all figures collected so far)
+                mapped_references = self.figure_mapper.map_references_to_figures(
+                    references, 
+                    result['figures']
+                )
+                
+                # Create page data with processed information
                 page_data = {
                     'index': page_idx,
                     'page_size': page_size,
                     'image_path': temp_image_path,
-                    'blocks': [],
-                    'references': []
+                    'blocks': text_blocks,
+                    'references': mapped_references
                 }
                 
                 result['pages'].append(page_data)
