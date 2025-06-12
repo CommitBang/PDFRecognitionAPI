@@ -1,75 +1,75 @@
-from paddleocr import PaddleOCR, PPStructure
 from typing import List, Dict, Any
 
 class LayoutDetector:
-    def __init__(self, use_gpu: bool = True, lang: str = 'en'):
-        """Initialize PPStructure for layout detection and text recognition"""
-        self.engine = PPStructure(
-            show_log=False,
-            use_gpu=use_gpu,
-            lang=lang,
-            recovery=False,  # Disable recovery to get raw layout results
-            structure_version='PP-StructureV2'
-        )
+    def __init__(self, pp_structure):
+        """Initialize with existing PP-StructureV3 instance"""
+        self.pp_structure = pp_structure
     
     def detect_layout_and_text(self, image_path: str) -> Dict[str, Any]:
-        """Detect layout and extract text using PPStructure"""
+        """Detect layout and extract text using PP-StructureV3"""
         try:
-            # Run PPStructure analysis
-            result = self.engine(image_path)
+            # Run PP-StructureV3 analysis
+            output = self.pp_structure.predict(image_path)
             
-            if not result:
+            if not output or not isinstance(output, list) or len(output) == 0:
                 return {'text_blocks': [], 'layout_blocks': []}
             
-            # Process results
+            result = output[0]
+            
+            # Extract layout detection results
+            layout_det_res = result.get('layout_det_res', {})
+            layout_boxes = layout_det_res.get('boxes', [])
+            
+            # Extract text recognition results  
+            ocr_res = result.get('overall_ocr_res', {})
+            rec_texts = ocr_res.get('rec_texts', [])
+            rec_scores = ocr_res.get('rec_scores', [])
+            rec_boxes = ocr_res.get('rec_boxes', [])
+            
+            # Process layout regions - filter out text layouts
             layout_blocks = []
+            
+            for box in layout_boxes:
+                label = box.get('label', '')
+                if label != 'text':  # Keep only non-text layout regions
+                    coordinate = box.get('coordinate', [0, 0, 0, 0])
+                    bbox_formatted = self._format_bbox_from_coords(coordinate)
+                    
+                    layout_block = {
+                        'type': label,
+                        'bbox': bbox_formatted,
+                        'confidence': box.get('score', 0.0),
+                        'text': ''  # Will be filled with contained text
+                    }
+                    layout_blocks.append(layout_block)
+            
+            # Process text blocks and assign to layout regions or standalone text
             text_blocks = []
             
-            for item in result:
-                item_type = item.get('type', '')
-                bbox = item.get('bbox', [0, 0, 0, 0])
-                
-                # Format bbox from [x1, y1, x2, y2] to {x, y, width, height}
-                bbox_formatted = self._format_bbox_from_coords(bbox)
-                
-                if item_type != 'text':
-                    # Non-text layout element (figure, table, etc.)
-                    layout_block = {
-                        'type': item_type,
-                        'bbox': bbox_formatted,
-                        'confidence': item.get('score', 1.0),
-                        'text': ''  # Will be filled if contains text
-                    }
+            for i, text in enumerate(rec_texts):
+                if i < len(rec_scores) and i < len(rec_boxes):
+                    bbox_formatted = self._format_bbox_from_coords(rec_boxes[i])
                     
-                    # Check if this layout element has associated text
-                    if 'res' in item and item['res']:
-                        text_content = self._extract_text_from_res(item['res'])
-                        layout_block['text'] = text_content
+                    # Check if this text block belongs to any figure-type layout region
+                    assigned_to_layout = False
+                    for layout_block in layout_blocks:
+                        if self._is_text_in_region(bbox_formatted, layout_block['bbox']):
+                            # Add text to the layout block's text property
+                            if layout_block['text']:
+                                layout_block['text'] += ' ' + text
+                            else:
+                                layout_block['text'] = text
+                            assigned_to_layout = True
+                            break
                     
-                    layout_blocks.append(layout_block)
-                else:
-                    # Text element
-                    if 'res' in item and item['res']:
-                        text_content = self._extract_text_from_res(item['res'])
-                        if text_content:
-                            # Check if this text is inside any layout block
-                            assigned = False
-                            for layout in layout_blocks:
-                                if self._is_bbox_inside(bbox_formatted, layout['bbox']):
-                                    if layout['text']:
-                                        layout['text'] += ' ' + text_content
-                                    else:
-                                        layout['text'] = text_content
-                                    assigned = True
-                                    break
-                            
-                            if not assigned:
-                                text_block = {
-                                    'text': text_content,
-                                    'bbox': bbox_formatted,
-                                    'confidence': item.get('score', 1.0)
-                                }
-                                text_blocks.append(text_block)
+                    # If not assigned to any layout, add as standalone text block
+                    if not assigned_to_layout:
+                        text_block = {
+                            'text': text,
+                            'bbox': bbox_formatted,
+                            'confidence': rec_scores[i]
+                        }
+                        text_blocks.append(text_block)
             
             return {
                 'text_blocks': text_blocks,
@@ -80,11 +80,11 @@ class LayoutDetector:
             print(f"Error in layout detection: {str(e)}")
             return {'text_blocks': [], 'layout_blocks': [], 'error': str(e)}
     
-    def _format_bbox_from_coords(self, bbox: List[float]) -> Dict[str, int]:
+    def _format_bbox_from_coords(self, coordinate: List[float]) -> Dict[str, int]:
         """Convert bbox from [x1, y1, x2, y2] to x, y, width, height format"""
         try:
-            if len(bbox) >= 4:
-                x1, y1, x2, y2 = bbox[:4]
+            if len(coordinate) >= 4:
+                x1, y1, x2, y2 = coordinate[:4]
                 return {
                     'x': int(x1),
                     'y': int(y1),
@@ -94,43 +94,21 @@ class LayoutDetector:
             else:
                 return {'x': 0, 'y': 0, 'width': 0, 'height': 0}
         except Exception as e:
-            print(f"Error formatting bbox: {str(e)}")
+            print(f"Error formatting bbox from coordinates: {str(e)}")
             return {'x': 0, 'y': 0, 'width': 0, 'height': 0}
     
-    def _extract_text_from_res(self, res) -> str:
-        """Extract text content from res field"""
-        try:
-            if isinstance(res, list):
-                text_parts = []
-                for item in res:
-                    if isinstance(item, dict) and 'text' in item:
-                        text_parts.append(item['text'])
-                    elif isinstance(item, list) and len(item) > 1:
-                        # OCR format [[bbox], [text, score]]
-                        if isinstance(item[1], list) and len(item[1]) > 0:
-                            text_parts.append(item[1][0])
-                return ' '.join(text_parts)
-            elif isinstance(res, dict) and 'text' in res:
-                return res['text']
-            elif isinstance(res, str):
-                return res
-            return ''
-        except Exception as e:
-            print(f"Error extracting text: {str(e)}")
-            return ''
-    
-    def _is_bbox_inside(self, inner_bbox: Dict[str, int], outer_bbox: Dict[str, int]) -> bool:
-        """Check if inner bbox is inside outer bbox"""
-        inner_x1 = inner_bbox['x']
-        inner_y1 = inner_bbox['y']
-        inner_x2 = inner_x1 + inner_bbox['width']
-        inner_y2 = inner_y1 + inner_bbox['height']
+    def _is_text_in_region(self, text_bbox: Dict[str, int], region_bbox: Dict[str, int]) -> bool:
+        """Check if text block overlaps with a region"""
+        text_x1 = text_bbox['x']
+        text_y1 = text_bbox['y']
+        text_x2 = text_x1 + text_bbox['width']
+        text_y2 = text_y1 + text_bbox['height']
         
-        outer_x1 = outer_bbox['x']
-        outer_y1 = outer_bbox['y']
-        outer_x2 = outer_x1 + outer_bbox['width']
-        outer_y2 = outer_y1 + outer_bbox['height']
+        region_x1 = region_bbox['x']
+        region_y1 = region_bbox['y']
+        region_x2 = region_x1 + region_bbox['width']
+        region_y2 = region_y1 + region_bbox['height']
         
-        # Check if inner is completely inside outer
-        return (inner_x1 >= outer_x1 and inner_y1 >= outer_y1 and 
-                inner_x2 <= outer_x2 and inner_y2 <= outer_y2)
+        # Check if text box overlaps with region
+        return (text_x1 < region_x2 and text_x2 > region_x1 and 
+                text_y1 < region_y2 and text_y2 > region_y1)

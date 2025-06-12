@@ -3,18 +3,28 @@ import os
 from PIL import Image
 from typing import List, Dict, Any
 from pdf2image import convert_from_path
+from paddleocr import PPStructureV3
 import tempfile
 import shutil
 
 class PDFProcessor:
-    def __init__(self, dpi: int = 300):
+    def __init__(self, dpi: int = 300, use_gpu: bool = True, lang: str = 'en'):
         self.dpi = dpi
+        # Initialize PP-StructureV3 once for all pages
+        self.pp_structure = PPStructureV3(
+            show_log=False,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+            device='gpu' if use_gpu else 'cpu'
+        )
     
     def extract_metadata(self, pdf_path: str) -> Dict[str, Any]:
         """Extract metadata from PDF file"""
         try:
             doc = fitz.open(pdf_path)
             metadata = doc.metadata
+            page_count = doc.page_count
             doc.close()
             
             return {
@@ -25,7 +35,7 @@ class PDFProcessor:
                 'producer': metadata.get('producer', ''),
                 'creation_date': metadata.get('creationDate', ''),
                 'modification_date': metadata.get('modDate', ''),
-                'pages': doc.page_count if 'doc' in locals() else 0
+                'pages': page_count
             }
         except Exception as e:
             print(f"Error extracting metadata: {str(e)}")
@@ -96,7 +106,8 @@ class PDFProcessor:
                 'metadata': metadata,
                 'pages': [],
                 'figures': [],
-                'temp_image_paths': []
+                'temp_image_paths': [],
+                'pp_structure': self.pp_structure  # Pass PP-StructureV3 instance
             }
             
             # Process each page

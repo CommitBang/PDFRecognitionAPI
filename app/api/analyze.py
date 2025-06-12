@@ -9,6 +9,8 @@ from config import Config
 from app.services.pdf_processor import PDFProcessor
 from app.services.layout_detector import LayoutDetector
 from app.services.reference_extractor import ReferenceExtractor
+from app.services.figure_id_generator import FigureIDGenerator
+from app.services.figure_mapper import FigureMapper
 
 api = Namespace('analyze', description='PDF analysis operations')
 
@@ -28,14 +30,16 @@ text_block_model = api.model('TextBlock', {
 reference_model = api.model('Reference', {
     'bbox': fields.Nested(bbox_model, description='Bounding box coordinates'),
     'text': fields.String(description='Reference text'),
-    'figure_id': fields.String(description='Referenced figure ID')
+    'figure_id': fields.String(description='Referenced figure ID', required=False),
+    'not_matched': fields.Boolean(description='True if reference not matched to any figure', required=False)
 })
 
 figure_model = api.model('Figure', {
     'bbox': fields.Nested(bbox_model, description='Bounding box coordinates'),
     'page_idx': fields.Integer(description='Page index'),
     'figure_id': fields.String(description='Figure ID'),
-    'type': fields.String(description='Figure type')
+    'type': fields.String(description='Figure type'),
+    'text': fields.String(description='Figure caption or text')
 })
 
 page_model = api.model('Page', {
@@ -97,9 +101,11 @@ class AnalyzeAPI(Resource):
                 # Cleanup temporary files
                 self._cleanup_files([temp_pdf_path] + result.get('temp_image_paths', []))
                 
-                # Remove temp paths from result before returning
+                # Remove temp paths and pp_structure from result before returning
                 if 'temp_image_paths' in result:
                     del result['temp_image_paths']
+                if 'pp_structure' in result:
+                    del result['pp_structure']
                 
                 return result, 200
                 
@@ -131,76 +137,67 @@ class AnalyzeAPI(Resource):
         return temp_file.name
     
     def _process_pdf(self, pdf_path: str) -> Dict[str, Any]:
-        """Process PDF file and return structured results"""
-        # Initialize services
-        pdf_processor = PDFProcessor(dpi=Config.DPI)
-        layout_detector = LayoutDetector(
-            use_gpu=Config.OCR_USE_GPU,
-            lang=Config.OCR_LANG
+        """Process PDF file using refactored logic"""
+        # Step 1: Initialize PDF processor with PP-StructureV3
+        pdf_processor = PDFProcessor(
+            dpi=Config.DPI,
+            use_gpu=Config.OCR_USE_GPU
         )
-        reference_extractor = ReferenceExtractor()
         
-        # Process PDF to get pages and images
+        # Process PDF to get pages and PP-StructureV3 instance
         pdf_result = pdf_processor.process_pdf(pdf_path)
         
         if 'error' in pdf_result:
             raise Exception(pdf_result['error'])
         
-        # Process each page for layout and text detection
+        # Get PP-StructureV3 instance
+        pp_structure = pdf_result.get('pp_structure')
+        
+        # Initialize services
+        layout_detector = LayoutDetector(pp_structure)
+        figure_id_generator = FigureIDGenerator()
+        reference_extractor = ReferenceExtractor()
+        figure_mapper = FigureMapper()
+        
+        # Collect all figures
+        all_figures = []
+        
+        # Process each page
         for page in pdf_result['pages']:
-            if page['image_path']:
-                # Detect layout and extract text
-                detection_result = layout_detector.detect_layout_and_text(page['image_path'])
-                
-                # Update page with detection results
-                page['blocks'] = detection_result.get('text_blocks', [])
-                
-                # Extract references from text blocks
-                references = reference_extractor.extract_references(page['blocks'])
-                page['references'] = references
-                
-                # Extract figures from layout blocks
-                layout_blocks = detection_result.get('layout_blocks', [])
-                page_figures = self._extract_figures_from_layout(layout_blocks, page['index'])
-                pdf_result['figures'].extend(page_figures)
+            if not page['image_path']:
+                continue
+            
+            # Step 2: Detect layout and text
+            detection_result = layout_detector.detect_layout_and_text(page['image_path'])
+            text_blocks = detection_result.get('text_blocks', [])
+            layout_blocks = detection_result.get('layout_blocks', [])
+            
+            # Update page with text blocks
+            page['blocks'] = text_blocks
+            
+            # Step 3: Generate figure IDs for layout blocks
+            for layout_block in layout_blocks:
+                figure_info = figure_id_generator.generate_figure_info(
+                    layout_block, 
+                    page['index']
+                )
+                all_figures.append(figure_info)
+            
+            # Step 4: Extract references from text blocks
+            references = reference_extractor.extract_references(text_blocks)
+            
+            # Step 5-7: Map references to figures
+            mapped_references = figure_mapper.map_references_to_figures(
+                references, 
+                all_figures
+            )
+            
+            page['references'] = mapped_references
+        
+        # Add all figures to result
+        pdf_result['figures'] = all_figures
         
         return pdf_result
-    
-    def _extract_figures_from_layout(self, layout_blocks: list, page_idx: int) -> list:
-        """Extract figure information from layout blocks"""
-        figures = []
-        figure_types = ['figure', 'image', 'chart', 'graph']
-        
-        for block in layout_blocks:
-            if block.get('type', '').lower() in figure_types:
-                figure = {
-                    'bbox': block['bbox'],
-                    'page_idx': page_idx,
-                    'figure_id': self._extract_figure_id(block.get('text', '')),
-                    'type': block['type']
-                }
-                figures.append(figure)
-        
-        return figures
-    
-    def _extract_figure_id(self, text: str) -> str:
-        """Extract figure ID from text"""
-        import re
-        if not text:
-            return ""
-        
-        patterns = [
-            r'fig\.?(?:ure)?\s*(\d+(?:\.\d+)*)',
-            r'图\s*(\d+(?:\.\d+)*)'
-        ]
-        
-        text_lower = text.lower()
-        for pattern in patterns:
-            match = re.search(pattern, text_lower)
-            if match:
-                return match.group(1)
-        
-        return ""
     
     def _cleanup_files(self, file_paths: list):
         """Clean up temporary files"""
