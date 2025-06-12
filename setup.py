@@ -21,9 +21,15 @@ def create_directories():
 
 def download_yolo_model():
     """Download YOLO-DocLayout model"""
-    print("Note: You need to manually download the YOLO-DocLayout model")
-    print("Visit: https://github.com/opendatalab/DocLayout-YOLO")
-    print("Download the model and place it in the 'models' directory as 'yolo_doclayout_model.pt'")
+    print("\nSetting up YOLO models...")
+    try:
+        subprocess.check_call([sys.executable, 'download_model.py'])
+    except subprocess.CalledProcessError as e:
+        print(f"Error running model download script: {e}")
+        print("You can manually run: python download_model.py")
+    except FileNotFoundError:
+        print("download_model.py not found. Skipping model download.")
+        print("Note: The system will auto-download YOLOv8 as fallback when first used.")
 
 def install_requirements():
     """Install Python requirements"""

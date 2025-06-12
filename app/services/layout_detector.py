@@ -31,12 +31,31 @@ class LayoutDetector:
         """Load YOLO-DocLayout model"""
         try:
             if os.path.exists(self.model_path):
+                print(f"Loading YOLO-DocLayout model from {self.model_path}")
                 self.model = YOLO(self.model_path)
             else:
-                # Download pre-trained model if not exists
-                self.model = YOLO('yolov8n.pt')  # Fallback to base model
-                print(f"Warning: YOLO-DocLayout model not found at {self.model_path}")
-                print("Using base YOLOv8 model. Please download DocLayout-YOLO model.")
+                # Try alternative model names
+                alternative_paths = [
+                    'models/doclayout_yolo.pt',
+                    'models/yolov8n.pt',
+                    'yolov8n.pt'
+                ]
+                
+                model_loaded = False
+                for alt_path in alternative_paths:
+                    if os.path.exists(alt_path):
+                        print(f"Loading model from {alt_path}")
+                        self.model = YOLO(alt_path)
+                        model_loaded = True
+                        break
+                
+                if not model_loaded:
+                    print(f"Warning: YOLO-DocLayout model not found at {self.model_path}")
+                    print("Downloading and using base YOLOv8 model as fallback...")
+                    self.model = YOLO('yolov8n.pt')  # This will auto-download
+                    print("Note: Using general object detection. For better layout detection:")
+                    print("1. Run: python download_model.py")
+                    print("2. Or manually download from: https://github.com/opendatalab/DocLayout-YOLO")
                 
         except Exception as e:
             raise Exception(f"Error loading YOLO model: {str(e)}")

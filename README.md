@@ -45,8 +45,17 @@ The system can detect the following layout elements:
    ```
    
 3. **Download YOLO-DocLayout model**:
+   
+   **Option A: Automatic Download (recommended)**
+   ```bash
+   python download_model.py
+   ```
+   
+   **Option B: Manual Download**
    - Visit: https://github.com/opendatalab/DocLayout-YOLO
    - Download the model file and place it in the `models/` directory as `yolo_doclayout_model.pt`
+   
+   **Note**: If no model is found, the system will automatically fallback to YOLOv8 for general object detection.
 
 ## Configuration
 
