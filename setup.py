@@ -71,10 +71,10 @@ def install_paddlepaddle(use_gpu=True):
     """Install PaddlePaddle with appropriate backend"""
     if use_gpu:
         print("Installing PaddlePaddle with GPU support...")
-        command = "pip install paddlepaddle-gpu==2.6.2"
+        command = "pip install paddlepaddle-gpu==3.0.0"
     else:
         print("Installing PaddlePaddle CPU-only version...")
-        command = "pip install paddlepaddle==2.6.2"
+        command = "pip install paddlepaddle==3.0.0"
     
     return run_command(command, "Installing PaddlePaddle")
 
