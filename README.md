@@ -44,18 +44,21 @@ The system can detect the following layout elements:
    python setup.py
    ```
    
-3. **Download YOLO-DocLayout model**:
+3. **DocLayout-YOLO Model Setup**:
    
-   **Option A: Automatic Download (recommended)**
+   **Option A: Automatic from Hugging Face (recommended)**
+   - No manual download needed! The system will automatically download the pre-trained model from Hugging Face: `juliozhao/DocLayout-YOLO-DocStructBench`
+   
+   **Option B: Manual Download**
    ```bash
    python download_model.py
    ```
    
-   **Option B: Manual Download**
+   **Option C: Manual from GitHub**
    - Visit: https://github.com/opendatalab/DocLayout-YOLO
    - Download the model file and place it in the `models/` directory as `yolo_doclayout_model.pt`
    
-   **Note**: If no model is found, the system will automatically fallback to YOLOv8 for general object detection.
+   **Note**: The system will automatically fallback to YOLOv8 for general object detection if DocLayout models are not available.
 
 ## Configuration
 
@@ -203,10 +206,20 @@ if result['success']:
 
 ## Troubleshooting
 
-1. **Model not found error**: Download the YOLO-DocLayout model and place it in `models/yolo_doclayout_model.pt`
-2. **CUDA out of memory**: Set `DEVICE=cpu` in `.env` file
-3. **File upload errors**: Check file size limit (50MB default)
-4. **Permission errors**: Ensure write permissions for `uploads/` and `temp/` directories
+1. **"'Conv' object has no attribute 'bn'" error**: 
+   ```bash
+   python fix_pytorch_compatibility.py
+   ```
+   Or manually:
+   ```bash
+   pip install ultralytics==8.2.0 --upgrade
+   pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+   ```
+
+2. **Model not found error**: Download the YOLO-DocLayout model and place it in `models/yolo_doclayout_model.pt`
+3. **CUDA out of memory**: Set `DEVICE=cpu` in `.env` file
+4. **File upload errors**: Check file size limit (50MB default)
+5. **Permission errors**: Ensure write permissions for `uploads/` and `temp/` directories
 
 ## License
 
