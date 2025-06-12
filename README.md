@@ -206,7 +206,18 @@ if result['success']:
 
 ## Troubleshooting
 
-1. **"'Conv' object has no attribute 'bn'" error**: 
+1. **"YOLOv10.__init_subclass__() takes no keyword arguments" error**: 
+   ```bash
+   python fix_doclayout_compatibility.py
+   ```
+   Or manually:
+   ```bash
+   pip uninstall doclayout-yolo huggingface-hub -y
+   pip install huggingface-hub==0.16.4
+   pip install doclayout-yolo==0.0.4
+   ```
+
+2. **"'Conv' object has no attribute 'bn'" error**: 
    ```bash
    python fix_pytorch_compatibility.py
    ```
@@ -216,10 +227,10 @@ if result['success']:
    pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
    ```
 
-2. **Model not found error**: Download the YOLO-DocLayout model and place it in `models/yolo_doclayout_model.pt`
-3. **CUDA out of memory**: Set `DEVICE=cpu` in `.env` file
-4. **File upload errors**: Check file size limit (50MB default)
-5. **Permission errors**: Ensure write permissions for `uploads/` and `temp/` directories
+3. **Model not found error**: The system will automatically download models from Hugging Face, or you can manually place them in `models/yolo_doclayout_model.pt`
+4. **CUDA out of memory**: Set `DEVICE=cpu` in `.env` file
+5. **File upload errors**: Check file size limit (50MB default)
+6. **Permission errors**: Ensure write permissions for `uploads/` and `temp/` directories
 
 ## License
 

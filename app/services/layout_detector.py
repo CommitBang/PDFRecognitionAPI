@@ -7,7 +7,14 @@ import os
 try:
     from doclayout_yolo import YOLOv10
     DOCLAYOUT_AVAILABLE = True
-except ImportError:
+    print("doclayout-yolo package loaded successfully")
+except ImportError as e:
+    print(f"doclayout-yolo not available: {e}")
+    DOCLAYOUT_AVAILABLE = False
+    YOLOv10 = None
+except Exception as e:
+    print(f"Error loading doclayout-yolo (likely version compatibility issue): {e}")
+    print("Falling back to ultralytics YOLO")
     DOCLAYOUT_AVAILABLE = False
     YOLOv10 = None
 
@@ -40,8 +47,9 @@ class LayoutDetector:
         """Load YOLO-DocLayout model with fallback handling"""
         model_loaded = False
         
-        # Try using pre-trained DocLayout model from Hugging Face (recommended)
+        # Only try DocLayout if the package is available
         if DOCLAYOUT_AVAILABLE:
+            # Try using pre-trained DocLayout model from Hugging Face (recommended)
             try:
                 print("Loading pre-trained DocLayout-YOLO model from Hugging Face...")
                 self.model = YOLOv10.from_pretrained("juliozhao/DocLayout-YOLO-DocStructBench")
@@ -52,19 +60,21 @@ class LayoutDetector:
             except Exception as e:
                 print(f"Error loading DocLayout model from Hugging Face: {e}")
                 print("Trying local model file...")
-        
-        # Try using local doclayout-yolo package with local model file
-        if DOCLAYOUT_AVAILABLE and os.path.exists(self.model_path):
-            try:
-                print(f"Loading DocLayout model using doclayout-yolo package from {self.model_path}")
-                self.model = YOLOv10(self.model_path)
-                model_loaded = True
-                print("DocLayout YOLO model loaded successfully using doclayout-yolo package")
-                self.using_doclayout = True
-                return
-            except Exception as e:
-                print(f"Error loading DocLayout model with doclayout-yolo package: {e}")
-                print("Falling back to ultralytics YOLO...")
+            
+            # Try using local doclayout-yolo package with local model file
+            if os.path.exists(self.model_path):
+                try:
+                    print(f"Loading DocLayout model using doclayout-yolo package from {self.model_path}")
+                    self.model = YOLOv10(self.model_path)
+                    model_loaded = True
+                    print("DocLayout YOLO model loaded successfully using doclayout-yolo package")
+                    self.using_doclayout = True
+                    return
+                except Exception as e:
+                    print(f"Error loading DocLayout model with doclayout-yolo package: {e}")
+                    print("Falling back to ultralytics YOLO...")
+        else:
+            print("doclayout-yolo package not available, using ultralytics YOLO")
         
         # Try ultralytics YOLO if doclayout-yolo failed or not available
         if os.path.exists(self.model_path):
@@ -80,6 +90,7 @@ class LayoutDetector:
                 print("This usually indicates a PyTorch version compatibility issue")
         
         # Try alternative models if DocLayout failed
+        print("Trying standard YOLO models as fallback...")
         alternative_models = [
             ('yolov8n.pt', 'YOLOv8 Nano'),
             ('yolov8s.pt', 'YOLOv8 Small'),
