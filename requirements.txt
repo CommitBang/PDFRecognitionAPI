@@ -9,3 +9,4 @@ ultralytics==8.0.220
 Werkzeug==2.3.7
 python-dotenv==1.0.0
 requests==2.31.0
+doclayout-yolo==0.0.4
