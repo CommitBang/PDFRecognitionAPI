@@ -15,75 +15,92 @@ class LayoutDetector:
             layout_blocks = []
             if not output_list or not isinstance(output_list, list):
                 return {'text_blocks': [], 'layout_blocks': []}
-            result = output_list[0]
         
-            # Process each result in the list - each result is a dict
-            for result in output_list:
-                print(f"Processing result: {type(result)}")
-                print(f"Result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
+            # Access the result dict - structure has 'res' key containing all data
+            result = output_list[0]  # First result contains the data
+            if not isinstance(result, dict) or 'res' not in result:
+                return {'text_blocks': [], 'layout_blocks': []}
+            
+            res_data = result['res']
+            print(f"Result keys: {res_data.keys()}")
+            
+            # Extract structured parsing results (higher level blocks)
+            parsing_res_list = res_data.get('parsing_res_list', [])
+            print(f"Found {len(parsing_res_list)} parsed blocks")
+            
+            # Extract OCR results
+            overall_ocr_res = res_data.get('overall_ocr_res', {})
+            rec_texts = overall_ocr_res.get('rec_texts', [])
+            rec_scores = overall_ocr_res.get('rec_scores', [])
+            rec_boxes = overall_ocr_res.get('rec_boxes', [])
+            
+            print(f"Found {len(rec_texts)} OCR texts")
+            
+            # Process structured parsing results (use these for layout blocks)
+            for parsed_block in parsing_res_list:
+                block_label = parsed_block.get('block_label', '')
+                block_content = parsed_block.get('block_content', '')
+                block_bbox = parsed_block.get('block_bbox', [])
                 
-                # Direct access to result dict (based on official docs)
-                if not isinstance(result, dict):
-                    continue
-                
-                # Extract layout detection results
-                layout_det_res = result.get('layout_det_res', {})
-                layout_boxes = layout_det_res.get('boxes', [])
-                
-                # Extract OCR results
-                overall_ocr_res = result.get('overall_ocr_res', {})
-                rec_texts = overall_ocr_res.get('rec_texts', [])
-                rec_scores = overall_ocr_res.get('rec_scores', [])
-                rec_boxes = overall_ocr_res.get('rec_boxes', [])
-                
-                print(f"Found {len(layout_boxes)} layout boxes")
-                print(f"Found {len(rec_texts)} OCR texts")
-                
-                # Process OCR results to create text blocks
-                for i, text in enumerate(rec_texts):
-                    if i < len(rec_scores) and i < len(rec_boxes):
-                        # Convert numpy array to list if needed
-                        box = rec_boxes[i]
-                        if isinstance(box, np.ndarray):
-                            box = box.tolist()
+                # Format bbox from [x1, y1, x2, y2] to our format
+                if len(block_bbox) >= 4:
+                    bbox_formatted = {
+                        'x': int(block_bbox[0]),
+                        'y': int(block_bbox[1]),
+                        'width': int(block_bbox[2] - block_bbox[0]),
+                        'height': int(block_bbox[3] - block_bbox[1])
+                    }
+                    
+                    # Determine if this is a text block or layout block
+                    if block_label in ['text', 'paragraph_title', 'header']:
+                        # Add as text block
+                        text_block = {
+                            'text': block_content,
+                            'bbox': bbox_formatted,
+                            'confidence': 1.0
+                        }
+                        text_blocks.append(text_block)
+                    else:
+                        # Add as layout block (figure, table, algorithm, etc.)
+                        layout_block = {
+                            'type': block_label,
+                            'bbox': bbox_formatted,
+                            'confidence': 1.0,
+                            'text': block_content
+                        }
+                        layout_blocks.append(layout_block)
+            
+            # Also process individual OCR results for any missed text
+            for i, text in enumerate(rec_texts):
+                if i < len(rec_scores) and i < len(rec_boxes):
+                    # Convert numpy array to list if needed
+                    box = rec_boxes[i]
+                    if isinstance(box, np.ndarray):
+                        box = box.tolist()
+                    
+                    # rec_boxes format: [x1, y1, x2, y2]
+                    if len(box) >= 4:
+                        bbox_formatted = {
+                            'x': int(box[0]),
+                            'y': int(box[1]),
+                            'width': int(box[2] - box[0]),
+                            'height': int(box[3] - box[1])
+                        }
                         
-                        # rec_boxes format: [x1, y1, x2, y2]
-                        if len(box) >= 4:
-                            bbox_formatted = {
-                                'x': int(box[0]),
-                                'y': int(box[1]),
-                                'width': int(box[2] - box[0]),
-                                'height': int(box[3] - box[1])
-                            }
-                            
+                        # Check if this text is already covered by parsing results
+                        already_covered = False
+                        for existing_block in text_blocks:
+                            if self._is_text_in_region(bbox_formatted, existing_block['bbox']):
+                                already_covered = True
+                                break
+                        
+                        if not already_covered:
                             text_block = {
                                 'text': text,
                                 'bbox': bbox_formatted,
                                 'confidence': float(rec_scores[i]) if i < len(rec_scores) else 1.0
                             }
                             text_blocks.append(text_block)
-                
-                # Process layout boxes to create layout blocks (non-text elements)
-                for box in layout_boxes:
-                    label = box.get('label', '')
-                    coordinate = box.get('coordinate', [])
-                    score = box.get('score', 0.0)
-                    
-                    # Skip text labels as we already processed OCR results
-                    if label == 'text':
-                        continue
-                    
-                    # Format bbox
-                    if len(coordinate) >= 4:
-                        bbox_formatted = self._format_bbox_from_coords(coordinate)
-                        
-                        layout_block = {
-                            'type': label,
-                            'bbox': bbox_formatted,
-                            'confidence': score,
-                            'text': self._extract_text_for_layout(bbox_formatted, text_blocks)
-                        }
-                        layout_blocks.append(layout_block)
             
             print(f"Created {len(text_blocks)} text blocks and {len(layout_blocks)} layout blocks")
             
