@@ -1,16 +1,11 @@
 from paddleocr import PPStructureV3
-from paddleocr import PPStructureV3
 from typing import List, Dict, Any
 
 class LayoutDetector:
     def __init__(self, use_gpu: bool = True, lang: str = 'en'):
         """Initialize PP-StructureV3 for layout detection and text recognition"""
         self.pipeline = PPStructureV3(
-        """Initialize PP-StructureV3 for layout detection and text recognition"""
-        self.pipeline = PPStructureV3(
             use_gpu=use_gpu,
-            lang=lang,
-            show_log=False
             lang=lang,
             show_log=False
         )
@@ -24,7 +19,6 @@ class LayoutDetector:
             # Run PP-StructureV3 pipeline
             output = self.pipeline.predict(image_path)
             
-            if not output or not isinstance(output, list) or len(output) == 0:
             if not output or not isinstance(output, list) or len(output) == 0:
                 return {'text_blocks': [], 'layout_blocks': []}
             
@@ -40,18 +34,6 @@ class LayoutDetector:
             rec_scores = ocr_res.get('rec_scores', [])
             rec_boxes = ocr_res.get('rec_boxes', [])
             
-            # Process layout regions - filter out text layouts
-            result = output[0]
-            
-            # Extract layout detection results
-            layout_det_res = result.get('layout_det_res', {})
-            layout_boxes = layout_det_res.get('boxes', [])
-            
-            # Extract text recognition results  
-            ocr_res = result.get('overall_ocr_res', {})
-            rec_texts = ocr_res.get('rec_texts', [])
-            rec_scores = ocr_res.get('rec_scores', [])
-            rec_boxes = ocr_res.get('rec_boxes', [])
             
             # Process layout regions - filter out text layouts
             layout_blocks = []
@@ -110,8 +92,6 @@ class LayoutDetector:
     
     def _format_bbox_from_coords(self, coordinate: List[float]) -> Dict[str, int]:
         """Convert bbox from [x1, y1, x2, y2] to x, y, width, height format"""
-    def _format_bbox_from_coords(self, coordinate: List[float]) -> Dict[str, int]:
-        """Convert bbox from [x1, y1, x2, y2] to x, y, width, height format"""
         try:
             if len(coordinate) >= 4:
                 x1, y1, x2, y2 = coordinate[:4]
@@ -157,6 +137,7 @@ class LayoutDetector:
                 return True
         
         return False
+    
     def _is_text_in_figure_region(self, text_bbox: Dict[str, int], figure_regions: List[Dict[str, int]]) -> bool:
         """Check if text block overlaps with any figure-type layout region"""
         text_x1 = text_bbox['x']
