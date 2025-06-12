@@ -71,10 +71,10 @@ def install_paddlepaddle(use_gpu=True):
     """Install PaddlePaddle with appropriate backend"""
     if use_gpu:
         print("Installing PaddlePaddle with GPU support...")
-        command = "pip install paddlepaddle-gpu==2.6.2"
+        command = "pip install paddlepaddle==3.0.0"
     else:
         print("Installing PaddlePaddle CPU-only version...")
-        command = "pip install paddlepaddle==2.6.2"
+        command = "pip install paddlepaddle==3.0.0"
     
     return run_command(command, "Installing PaddlePaddle")
 
@@ -88,7 +88,7 @@ def install_requirements():
         "PyMuPDF==1.20.2",
         "pdf2image==1.16.3",
         "Pillow==10.0.1",
-        "paddleocr==2.7.3",
+        "paddleocr==3.0.1",
         "opencv-python==4.6.0.66",
         "numpy==1.24.4",
         "requests==2.31.0",

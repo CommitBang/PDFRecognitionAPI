@@ -3,7 +3,7 @@ import os
 from PIL import Image
 from typing import List, Dict, Any
 from pdf2image import convert_from_path
-from paddleocr import PaddleOCR, PPStructure
+from paddleocr import PaddleOCR, PPStructureV3
 import tempfile
 import shutil
 from app.services.layout_detector import LayoutDetector
@@ -15,8 +15,7 @@ class PDFProcessor:
     def __init__(self, dpi: int = 300, use_gpu: bool = True, lang: str = 'en'):
         self.dpi = dpi
         # Initialize PP-StructureV3 once for all pages
-        self.pp_structure = PPStructure(
-            show_log=False,
+        self.pp_structure = PPStructureV3(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,

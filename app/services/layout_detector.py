@@ -11,16 +11,12 @@ class LayoutDetector:
         try:
             # Run PP-Structure analysis - predict() returns a list of results
             output_list = self.pp_structure.predict(image_path)
-            
-            print(f"PP-Structure output type: {type(output_list)}")
-            print(f"PP-Structure output length: {len(output_list) if isinstance(output_list, list) else 'Not a list'}")
-            
-            if not output_list or not isinstance(output_list, list):
-                return {'text_blocks': [], 'layout_blocks': []}
-            
             text_blocks = []
             layout_blocks = []
-            
+            if not output_list or not isinstance(output_list, list):
+                return {'text_blocks': [], 'layout_blocks': []}
+            result = output_list[0]
+        
             # Process each result in the list - each result is a dict
             for result in output_list:
                 print(f"Processing result: {type(result)}")
