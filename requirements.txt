@@ -10,18 +10,17 @@ Pillow==10.0.1
 
 # OCR and Layout Analysis - Python 3.9 compatible
 paddleocr==2.7.3
-paddlepaddle-gpu==2.5.2
+paddlepaddle-gpu==2.6.2
 
 # Deep Learning - Python 3.9 compatible
-torch==2.1.0
-torchvision==0.16.0
-torchaudio==2.1.0
-transformers==4.35.2
-tokenizers==0.15.0
+torch==2.2.1
+torchvision==0.17.1
+torchaudio==2.2.1
 
 # Image processing
 opencv-python==4.8.1.78
-numpy==1.24.4
+numpy>=1.26.0
+setuptools>=69.0.0
 
 # Utilities
 requests==2.31.0

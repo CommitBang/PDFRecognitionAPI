@@ -60,10 +60,10 @@ def install_pytorch(use_gpu=True):
     """Install PyTorch with appropriate backend"""
     if use_gpu:
         print("Installing PyTorch with CUDA support...")
-        command = "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu118"
+        command = "pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu118"
     else:
         print("Installing PyTorch CPU-only version...")
-        command = "pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cpu"
+        command = "pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cpu"
     
     return run_command(command, "Installing PyTorch")
 
@@ -71,10 +71,10 @@ def install_paddlepaddle(use_gpu=True):
     """Install PaddlePaddle with appropriate backend"""
     if use_gpu:
         print("Installing PaddlePaddle with GPU support...")
-        command = "pip install paddlepaddle-gpu==2.5.2"
+        command = "pip install paddlepaddle-gpu==2.6.2"
     else:
         print("Installing PaddlePaddle CPU-only version...")
-        command = "pip install paddlepaddle==2.5.2"
+        command = "pip install paddlepaddle==2.6.2"
     
     return run_command(command, "Installing PaddlePaddle")
 
@@ -89,9 +89,7 @@ def install_requirements():
         "pdf2image==1.16.3",
         "Pillow==10.0.1",
         "paddleocr==2.7.3",
-        "transformers==4.35.2",
-        "tokenizers==0.15.0",
-        "opencv-python==4.8.1.78",
+        "opencv-python==4.6.0.66",
         "numpy==1.24.4",
         "requests==2.31.0",
         "python-dotenv==1.0.0",
