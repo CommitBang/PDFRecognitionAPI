@@ -1,4 +1,4 @@
-# app/services/pdf_processor.py - 타입 안전성 개선 (핵심 부분만)
+# app/services/pdf_processor.py - FigureGrouper 통합된 버전
 import fitz
 import os
 import io
@@ -11,6 +11,7 @@ from app.services.layout_detector import LayoutDetector
 from app.services.figure_id_generator import FigureIDGenerator
 from app.services.reference_extractor import ReferenceExtractor
 from app.services.figure_mapper import FigureMapper
+from app.services.figure_grouper import FigureGrouper  # FigureGrouper 추가
 
 # Global PP-Structure instance to avoid reloading models
 _pp_structure_instance = None
@@ -64,6 +65,7 @@ class PDFProcessor:
         self.figure_id_generator = FigureIDGenerator()
         self.reference_extractor = ReferenceExtractor()
         self.figure_mapper = FigureMapper()
+        self.figure_grouper = FigureGrouper()  # FigureGrouper 인스턴스 추가
     
     def extract_pdf_data(self, pdf_path: str) -> tuple[Dict[str, Any], List[Image.Image]]:
         """Extract metadata and convert PDF to images in single operation"""
@@ -162,19 +164,30 @@ class PDFProcessor:
                     text_blocks = detection_result.get('text_blocks', [])
                     layout_blocks = detection_result.get('layout_blocks', [])
                     
-                    # Step 3: Generate figure IDs for layout blocks and save to figures
-                    for layout_block in layout_blocks:
-                        try:
-                            figure_info = self.figure_id_generator.generate_figure_info(
-                                layout_block, 
-                                page_idx
-                            )
-                            result['figures'].append(figure_info)
-                        except Exception as e:
-                            print(f"Error generating figure info: {e}")
-                            continue
+                    # Step 3: FigureGrouper를 사용해서 관련 layout 요소들을 그룹핑
+                    print(f"Page {page_idx}: Grouping {len(layout_blocks)} layout blocks using FigureGrouper...")
+                    grouped_figures = self.figure_grouper.group_figure_elements(layout_blocks, page_idx)
                     
-                    # Step 4: Extract references from text blocks with page info
+                    # Step 4: 그룹핑된 결과가 없으면 기존 방식으로 fallback
+                    if not grouped_figures:
+                        print(f"Page {page_idx}: No grouped figures found, falling back to individual processing...")
+                        # 기존 방식: 개별 layout_block을 figure로 처리
+                        for layout_block in layout_blocks:
+                            try:
+                                figure_info = self.figure_id_generator.generate_figure_info(
+                                    layout_block, 
+                                    page_idx
+                                )
+                                result['figures'].append(figure_info)
+                            except Exception as e:
+                                print(f"Error generating figure info: {e}")
+                                continue
+                    else:
+                        # FigureGrouper의 결과를 사용
+                        print(f"Page {page_idx}: Successfully grouped into {len(grouped_figures)} figures")
+                        result['figures'].extend(grouped_figures)
+                    
+                    # Step 5: Extract references from text blocks with page info
                     references = self.reference_extractor.extract_references(text_blocks, page_idx)
                     
                     # 모든 참조를 수집 (나중에 그래프 매핑에 사용)
@@ -202,7 +215,7 @@ class PDFProcessor:
                     })
                     continue
             
-            # Step 5-7: 모든 페이지 처리 후 그래프 기반 매핑 수행
+            # Step 6-8: 모든 페이지 처리 후 그래프 기반 매핑 수행
             print(f"Mapping {len(result['all_references'])} references to {len(result['figures'])} figures using graph-based approach...")
             
             try:
