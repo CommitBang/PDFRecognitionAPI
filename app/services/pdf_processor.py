@@ -62,7 +62,7 @@ def get_pp_structure_instance(use_gpu: bool = True):
         }
         
         # Use ultra-lightweight configuration for maximum speed
-        _pp_structure_instance = PPStructureV3(**config_ultra_light)
+        _pp_structure_instance = PPStructureV3(**config_balanced)
         print("PP-StructureV3 models loaded successfully!")
     else:
         print("Using cached PP-StructureV3 instance")
