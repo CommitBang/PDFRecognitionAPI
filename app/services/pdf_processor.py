@@ -31,11 +31,6 @@ def get_pp_structure_instance(use_gpu: bool = True):
         
         # Option 1: Ultra-lightweight configuration (fastest)
         config_ultra_light = {
-            # Use smallest models available (correct property names)
-            'layout_detection_model_name': 'PP-DocLayout-S',        # 8.1ms/page on T4 GPU, 14.5ms/page on CPU
-            'text_detection_model_name': 'PP-OCRv4_mobile_det',     # Mobile detection model
-            'text_recognition_model_name': 'PP-OCRv4_mobile_rec',   # Mobile recognition model
-            
             # Disable heavy features for speed
             'use_doc_orientation_classify': False,
             'use_doc_unwarping': False,
@@ -45,10 +40,8 @@ def get_pp_structure_instance(use_gpu: bool = True):
             'use_table_recognition': False,
             'use_formula_recognition': False,
             
-            # Performance settings
-            'device': 'gpu:0' if use_gpu else 'cpu',
-            'precision': 'fp16' if use_gpu else 'fp32',
-            'enable_hpi': True,  # High performance inference
+            # Device setting
+            'device': 'gpu' if use_gpu else 'cpu',
         }
         
         # Option 2: Balanced configuration (good speed + accuracy)
@@ -65,8 +58,7 @@ def get_pp_structure_instance(use_gpu: bool = True):
             'use_table_recognition': False,   # Keep table recognition
             'use_formula_recognition': False, # Keep formula recognition
             
-            'device': 'gpu:0' if use_gpu else 'cpu',
-            'precision': 'fp16' if use_gpu else 'fp32',
+            'device': 'gpu' if use_gpu else 'cpu',
         }
         
         # Use ultra-lightweight configuration for maximum speed
