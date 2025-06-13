@@ -69,12 +69,17 @@ def install_pytorch(use_gpu=True):
 
 def install_paddlepaddle(use_gpu=True):
     """Install PaddlePaddle with appropriate backend"""
+    # First, install compatible numpy to avoid conflicts
+    print("Installing compatible numpy version...")
+    run_command("pip install numpy==1.24.3", "Installing numpy 1.24.3")
+    
     if use_gpu:
-        print("Installing PaddlePaddle with GPU support...")
-        command = "pip install paddlepaddle==3.0.0"
+        print("Installing PaddlePaddle GPU 3.0.0 with CUDA 12.3 support...")
+        # For CUDA 12.3 (compatible with CUDA 12.9)
+        command = "python -m pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/"
     else:
-        print("Installing PaddlePaddle CPU-only version...")
-        command = "pip install paddlepaddle==3.0.0"
+        print("Installing PaddlePaddle CPU-only version 3.0.0...")
+        command = "python -m pip install paddlepaddle==3.0.0"
     
     return run_command(command, "Installing PaddlePaddle")
 
@@ -82,20 +87,28 @@ def install_requirements():
     """Install remaining requirements"""
     # Create requirements without PyTorch and PaddlePaddle (already installed)
     requirements_without_torch = [
-        "Flask==2.3.3",
+        "Flask==3.0.2",
         "flask-restx==1.3.0", 
-        "Werkzeug==2.3.7",
-        "PyMuPDF==1.20.2",
-        "pdf2image==1.16.3",
-        "Pillow==10.0.1",
-        "paddleocr==3.0.1",
-        "opencv-python==4.6.0.66",
-        "numpy==1.24.4",
+        "Werkzeug==3.0.1",
+        "PyMuPDF==1.24.0",
+        "pdf2image==1.17.0",
+        "Pillow==10.2.0",
+        "paddleocr==3.0.1",  # Keep PaddleOCR 3.0.1 as requested
+        "opencv-python==4.8.1.78",
+        "opencv-contrib-python==4.8.1.78",
+        # numpy already installed with compatible version
+        "scipy==1.10.1",  # Compatible with numpy 1.24.3
+        "scikit-learn==1.3.2",
         "requests==2.31.0",
         "python-dotenv==1.0.0",
         "gunicorn==21.2.0",
         "pytest==7.4.3",
-        "pytest-flask==1.3.0"
+        "pytest-flask==1.3.0",
+        "shapely==2.0.3",
+        "pyclipper==1.3.0.post5",
+        "lmdb==1.4.1",
+        "tqdm==4.66.2",
+        "rapidfuzz==3.6.1"
     ]
     
     temp_requirements = "temp_requirements.txt"
@@ -128,10 +141,10 @@ def download_models():
 import sys
 sys.path.append('.')
 try:
-    from paddleocr import PaddleOCR
-    print("Initializing PaddleOCR to download models...")
-    ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
-    print("PaddleOCR models downloaded successfully!")
+    from paddleocr import PPStructureV3
+    print("Initializing PP-StructureV3 to download models...")
+    pipeline = PPStructureV3(device='cpu')
+    print("PP-StructureV3 models downloaded successfully!")
 except Exception as e:
     print(f"Warning: Could not download models: {e}")
     print("Models will be downloaded on first API call")

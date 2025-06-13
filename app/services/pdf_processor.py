@@ -3,7 +3,7 @@ import os
 from PIL import Image
 from typing import List, Dict, Any
 from pdf2image import convert_from_path
-from paddleocr import PaddleOCR, PPStructureV3
+from paddleocr import PPStructureV3
 import tempfile
 import shutil
 from app.services.layout_detector import LayoutDetector
