@@ -1,4 +1,4 @@
-# app/services/pdf_processor.py - 그래프 기반 매핑을 위한 업데이트
+# app/services/pdf_processor.py - 타입 안전성 개선 (핵심 부분만)
 import fitz
 import os
 import io
@@ -74,15 +74,16 @@ class PDFProcessor:
             metadata = doc.metadata
             page_count = doc.page_count
             
+            # 타입 안전성을 위한 메타데이터 처리
             metadata_dict = {
-                'title': metadata.get('title', ''),
-                'author': metadata.get('author', ''),
-                'subject': metadata.get('subject', ''),
-                'creator': metadata.get('creator', ''),
-                'producer': metadata.get('producer', ''),
-                'creation_date': metadata.get('creationDate', ''),
-                'modification_date': metadata.get('modDate', ''),
-                'pages': page_count
+                'title': str(metadata.get('title', '') or ''),
+                'author': str(metadata.get('author', '') or ''),
+                'subject': str(metadata.get('subject', '') or ''),
+                'creator': str(metadata.get('creator', '') or ''),
+                'producer': str(metadata.get('producer', '') or ''),
+                'creation_date': str(metadata.get('creationDate', '') or ''),
+                'modification_date': str(metadata.get('modDate', '') or ''),
+                'pages': int(page_count)
             }
             
             # Convert to images
@@ -149,80 +150,124 @@ class PDFProcessor:
             
             # Process each page
             for page_idx, image in enumerate(images):
-                page_size = image.size  # Use actual image size that goes into LayoutDetector
-                temp_image_path = self.save_temp_image(image, f"page_{page_idx}_")
-                
-                if temp_image_path:
-                    result['temp_image_paths'].append(temp_image_path)
-                
-                # Step 2: Detect layout and text from current page
-                detection_result = self.layout_detector.detect_layout_and_text(temp_image_path)
-                text_blocks = detection_result.get('text_blocks', [])
-                layout_blocks = detection_result.get('layout_blocks', [])
-                
-                # Step 3: Generate figure IDs for layout blocks and save to figures
-                for layout_block in layout_blocks:
-                    figure_info = self.figure_id_generator.generate_figure_info(
-                        layout_block, 
-                        page_idx
-                    )
-                    result['figures'].append(figure_info)
-                
-                # Step 4: Extract references from text blocks with page info
-                references = self.reference_extractor.extract_references(text_blocks, page_idx)
-                
-                # 모든 참조를 수집 (나중에 그래프 매핑에 사용)
-                result['all_references'].extend(references)
-                
-                # Create page data
-                page_data = {
-                    'index': page_idx,
-                    'page_size': page_size,
-                    'image_path': temp_image_path,
-                    'blocks': text_blocks,
-                    'references': references  # 페이지별 참조 (임시 저장)
-                }
-                
-                result['pages'].append(page_data)
+                try:
+                    page_size = list(image.size)  # Use actual image size that goes into LayoutDetector
+                    temp_image_path = self.save_temp_image(image, f"page_{page_idx}_")
+                    
+                    if temp_image_path:
+                        result['temp_image_paths'].append(temp_image_path)
+                    
+                    # Step 2: Detect layout and text from current page
+                    detection_result = self.layout_detector.detect_layout_and_text(temp_image_path)
+                    text_blocks = detection_result.get('text_blocks', [])
+                    layout_blocks = detection_result.get('layout_blocks', [])
+                    
+                    # Step 3: Generate figure IDs for layout blocks and save to figures
+                    for layout_block in layout_blocks:
+                        try:
+                            figure_info = self.figure_id_generator.generate_figure_info(
+                                layout_block, 
+                                page_idx
+                            )
+                            result['figures'].append(figure_info)
+                        except Exception as e:
+                            print(f"Error generating figure info: {e}")
+                            continue
+                    
+                    # Step 4: Extract references from text blocks with page info
+                    references = self.reference_extractor.extract_references(text_blocks, page_idx)
+                    
+                    # 모든 참조를 수집 (나중에 그래프 매핑에 사용)
+                    result['all_references'].extend(references)
+                    
+                    # Create page data
+                    page_data = {
+                        'index': page_idx,
+                        'page_size': page_size,
+                        'image_path': temp_image_path,
+                        'blocks': text_blocks,
+                        'references': references  # 페이지별 참조 (임시 저장)
+                    }
+                    
+                    result['pages'].append(page_data)
+                    
+                except Exception as e:
+                    print(f"Error processing page {page_idx}: {e}")
+                    # 에러가 발생한 페이지도 기본 구조로 추가
+                    result['pages'].append({
+                        'index': page_idx,
+                        'page_size': [595, 842],  # 기본 크기
+                        'blocks': [],
+                        'references': []
+                    })
+                    continue
             
             # Step 5-7: 모든 페이지 처리 후 그래프 기반 매핑 수행
             print(f"Mapping {len(result['all_references'])} references to {len(result['figures'])} figures using graph-based approach...")
             
-            all_mapped_references = self.figure_mapper.map_references_to_figures(
-                result['all_references'], 
-                result['figures']
-            )
-            
-            # 그래프 통계 출력 (디버깅용)
-            if hasattr(self.figure_mapper, 'get_graph_statistics'):
-                stats = self.figure_mapper.get_graph_statistics()
-                print(f"Graph statistics: {stats}")
-            
-            # 매핑된 참조를 각 페이지에 다시 할당
-            ref_idx = 0
-            for page_data in result['pages']:
-                num_refs = len(page_data['references'])
-                page_data['references'] = all_mapped_references[ref_idx:ref_idx + num_refs]
-                ref_idx += num_refs
-            
-            # all_references는 최종 결과에서 제거
-            del result['all_references']
-            
-            # 매핑 통계 추가
-            matched_count = sum(1 for ref in all_mapped_references if not ref.get('not_matched', True))
-            unmatched_count = len(all_mapped_references) - matched_count
-            
-            result['mapping_statistics'] = {
-                'total_references': len(all_mapped_references),
-                'matched_references': matched_count,
-                'unmatched_references': unmatched_count,
-                'match_rate': matched_count / len(all_mapped_references) if all_mapped_references else 0
-            }
-            
-            print(f"Mapping complete: {matched_count}/{len(all_mapped_references)} references matched ({result['mapping_statistics']['match_rate']:.1%})")
+            try:
+                all_mapped_references = self.figure_mapper.map_references_to_figures(
+                    result['all_references'], 
+                    result['figures']
+                )
+                
+                # 그래프 통계 출력 (디버깅용)
+                if hasattr(self.figure_mapper, 'get_graph_statistics'):
+                    stats = self.figure_mapper.get_graph_statistics()
+                    print(f"Graph statistics: {stats}")
+                
+                # 매핑된 참조를 각 페이지에 다시 할당
+                ref_idx = 0
+                for page_data in result['pages']:
+                    num_refs = len(page_data.get('references', []))
+                    if num_refs > 0 and ref_idx < len(all_mapped_references):
+                        page_data['references'] = all_mapped_references[ref_idx:ref_idx + num_refs]
+                        ref_idx += num_refs
+                    else:
+                        page_data['references'] = []
+                
+                # all_references는 최종 결과에서 제거
+                del result['all_references']
+                
+                # 매핑 통계 추가 (타입 안전성 보장)
+                try:
+                    total_refs = len(all_mapped_references)
+                    matched_count = sum(1 for ref in all_mapped_references if not ref.get('not_matched', True))
+                    unmatched_count = total_refs - matched_count
+                    match_rate = matched_count / total_refs if total_refs > 0 else 0.0
+                    
+                    result['mapping_statistics'] = {
+                        'total_references': total_refs,
+                        'matched_references': matched_count,
+                        'unmatched_references': unmatched_count,
+                        'match_rate': float(match_rate)
+                    }
+                    
+                    print(f"Mapping complete: {matched_count}/{total_refs} references matched ({match_rate:.1%})")
+                except Exception as e:
+                    print(f"Error calculating mapping statistics: {e}")
+                    result['mapping_statistics'] = {
+                        'total_references': 0,
+                        'matched_references': 0,
+                        'unmatched_references': 0,
+                        'match_rate': 0.0
+                    }
+                
+            except Exception as e:
+                print(f"Error in figure mapping: {e}")
+                # 매핑 실패 시 기본 참조 유지
+                del result['all_references']
+                result['mapping_statistics'] = {
+                    'total_references': 0,
+                    'matched_references': 0,
+                    'unmatched_references': 0,
+                    'match_rate': 0.0
+                }
             
             return result
             
         except Exception as e:
             print(f"Error processing PDF: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'error': str(e)}
