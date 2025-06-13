@@ -76,7 +76,7 @@ def install_paddlepaddle(use_gpu=True):
     if use_gpu:
         print("Installing PaddlePaddle GPU 3.0.0 with CUDA 12.3 support...")
         # For CUDA 12.3 (compatible with CUDA 12.9)
-        command = "python -m pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu123/"
+        command = "conda install paddlepaddle-gpu==3.0.0 paddlepaddle-cuda=12.6 -c paddle -c nvidia"
     else:
         print("Installing PaddlePaddle CPU-only version 3.0.0...")
         command = "python -m pip install paddlepaddle==3.0.0"
@@ -85,7 +85,15 @@ def install_paddlepaddle(use_gpu=True):
 
 def install_requirements():
     """Install remaining requirements"""
-    # Create requirements without PyTorch and PaddlePaddle (already installed)
+    # First install PaddleX separately to handle dependency conflicts
+    print("\nInstalling PaddleX 3.0.1...")
+    run_command("pip install paddlex==3.0.1", "Installing PaddleX")
+    
+    # Then install PaddleOCR with --no-deps to avoid dependency conflicts
+    print("\nInstalling PaddleOCR 3.0.1 without dependencies...")
+    run_command("pip install paddleocr==3.0.1 --no-deps", "Installing PaddleOCR without dependencies")
+    
+    # Create requirements without PyTorch, PaddlePaddle, and PaddleOCR (already installed)
     requirements_without_torch = [
         "Flask==3.0.2",
         "flask-restx==1.3.0", 
@@ -93,22 +101,27 @@ def install_requirements():
         "PyMuPDF==1.24.0",
         "pdf2image==1.17.0",
         "Pillow==10.2.0",
-        "paddleocr==3.0.1",  # Keep PaddleOCR 3.0.1 as requested
-        "opencv-python==4.8.1.78",
-        "opencv-contrib-python==4.8.1.78",
+        "opencv-python>=4.9.0",  # Updated for albumentations compatibility
+        "opencv-contrib-python>=4.9.0",
         # numpy already installed with compatible version
         "scipy==1.10.1",  # Compatible with numpy 1.24.3
         "scikit-learn==1.3.2",
+        "shapely==2.0.3",
+        "scikit-image==0.22.0",
+        "albumentations>=1.3.0",  # Loosened version for compatibility
+        "albucore>=0.0.12",  # Loosened version for compatibility
+        "pyclipper==1.3.0.post5",
+        "lmdb==1.4.1",
+        "tqdm==4.66.2",
+        "rapidfuzz==3.6.1",
+        "pyyaml==6.0.1",
+        "packaging==24.0",
+        "cython==3.0.8",
         "requests==2.31.0",
         "python-dotenv==1.0.0",
         "gunicorn==21.2.0",
         "pytest==7.4.3",
-        "pytest-flask==1.3.0",
-        "shapely==2.0.3",
-        "pyclipper==1.3.0.post5",
-        "lmdb==1.4.1",
-        "tqdm==4.66.2",
-        "rapidfuzz==3.6.1"
+        "pytest-flask==1.3.0"
     ]
     
     temp_requirements = "temp_requirements.txt"
