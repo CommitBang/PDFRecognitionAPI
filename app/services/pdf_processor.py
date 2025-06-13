@@ -11,11 +11,24 @@ from app.services.figure_id_generator import FigureIDGenerator
 from app.services.reference_extractor import ReferenceExtractor
 from app.services.figure_mapper import FigureMapper
 
-class PDFProcessor:
-    def __init__(self, dpi: int = 150, use_gpu: bool = True, lang: str = 'en'):
-        self.dpi = dpi
-        # Initialize PP-StructureV3 with lightweight configuration
-        self.pp_structure = PPStructureV3(
+# Global PP-Structure instance to avoid reloading models
+_pp_structure_instance = None
+
+def get_pp_structure_instance(use_gpu: bool = True):
+    """Get or create global PP-Structure instance"""
+    global _pp_structure_instance
+    if _pp_structure_instance is None:
+        # Check if models are already cached
+        cache_dir = os.path.expanduser("~/.paddlex/official_models")
+        if os.path.exists(cache_dir):
+            print(f"Models cache found at: {cache_dir}")
+            model_files = os.listdir(cache_dir)
+            print(f"Cached models: {len(model_files)} files")
+        else:
+            print("No model cache found - models will be downloaded")
+        
+        print("Initializing PP-StructureV3 models...")
+        _pp_structure_instance = PPStructureV3(
             # Disable heavy features for speed
             use_doc_orientation_classify=False,
             use_doc_unwarping=False, 
@@ -28,17 +41,18 @@ class PDFProcessor:
             use_formula_recognition=True,
             
             # Performance optimizations
-            device='gpu' if use_gpu else 'cpu',
-            
-            # Use lightweight models (if available)
-            layout_model='PP-DocLayout-S',  # Small model variant
-            ocr_model='PP-OCRv4-mobile',    # Mobile OCR model
-            
-            # Performance settings
-            cpu_threads=4,                   # Limit CPU threads
-            enable_mkldnn=True,             # Enable MKLDNN acceleration on CPU
-            precision='fp16' if use_gpu else 'fp32'  # Use fp16 on GPU for speed
+            device='gpu' if use_gpu else 'cpu'
         )
+        print("PP-StructureV3 models loaded successfully!")
+    else:
+        print("Using cached PP-StructureV3 instance")
+    return _pp_structure_instance
+
+class PDFProcessor:
+    def __init__(self, dpi: int = 150, use_gpu: bool = True, lang: str = 'en'):
+        self.dpi = dpi
+        # Use global PP-Structure instance to avoid reloading models
+        self.pp_structure = get_pp_structure_instance(use_gpu)
         
         # Initialize services
         self.layout_detector = LayoutDetector(self.pp_structure)
