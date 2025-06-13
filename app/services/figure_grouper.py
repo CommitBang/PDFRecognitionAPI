@@ -72,7 +72,7 @@ class BoundingBox:
 class FigureGrouper:
     """Groups related figure elements (title, image, caption) into single figures"""
     
-    def __init__(self, vertical_threshold: int = 50, horizontal_threshold: int = 100):
+    def __init__(self, vertical_threshold: int = 100, horizontal_threshold: int = 200):
         self.vertical_threshold = vertical_threshold  # Max vertical distance for grouping
         self.horizontal_threshold = horizontal_threshold  # Max horizontal distance
         
