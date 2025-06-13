@@ -174,46 +174,33 @@ class FigureMapper:
         ref_nodes = [n for n in self.graph.nodes() if self.graph.nodes[n]['type'] == 'reference']
         
         for ref_node in ref_nodes:
-            # 참조 노드에서 연결된 모든 피규어 노드 찾기
             connected_figures = []
             
             for successor in self.graph.successors(ref_node):
                 if self.graph.nodes[successor]['type'] == 'figure':
-                    # 모든 엣지의 가중치 합산 (타입 안전성 개선)
-                    total_weight = 0.0
-                    edge_data_dict = self.graph.get_edge_data(ref_node, successor)
+                    edge_data = self.graph.get_edge_data(ref_node, successor)
                     
-                    if edge_data_dict:
-                        for edge_data in edge_data_dict.values():
-                            if isinstance(edge_data, dict):
-                                weight = edge_data.get('weight', 0)
-                                # 가중치를 float로 안전하게 변환
-                                try:
-                                    total_weight += float(weight)
-                                except (ValueError, TypeError):
-                                    print(f"Warning: Invalid weight value: {weight}")
-                                    total_weight += 0.0
-                            else:
-                                # edge_data가 dict가 아닌 경우
-                                try:
-                                    total_weight += float(edge_data)
-                                except (ValueError, TypeError):
-                                    print(f"Warning: Invalid edge data: {edge_data}")
-                                    total_weight += 0.0
+                    if edge_data:
+                        # get_edge_data는 단일 dict를 반환함
+                        weight = edge_data.get('weight', 0)
+                        try:
+                            total_weight = float(weight)
+                        except (ValueError, TypeError):
+                            total_weight = 0.0
+                    else:
+                        total_weight = 0.0
                     
                     connected_figures.append((successor, total_weight))
             
-            # 가장 높은 가중치를 가진 피규어 선택
             if connected_figures:
                 connected_figures.sort(key=lambda x: x[1], reverse=True)
                 best_figure, best_weight = connected_figures[0]
                 
-                # 임계값 이상인 경우에만 매핑
                 if best_weight > 0.3:
                     mappings[ref_node] = best_figure
         
         return mappings
-    
+        
     def _extract_id_from_reference(self, ref_text: str) -> Optional[str]:
         """Extract figure ID from reference text"""
         if not ref_text:
