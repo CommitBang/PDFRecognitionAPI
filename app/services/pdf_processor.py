@@ -80,15 +80,16 @@ class PDFProcessor:
         self.reference_extractor = ReferenceExtractor()
         self.figure_mapper = FigureMapper()
     
-    def extract_metadata(self, pdf_path: str) -> Dict[str, Any]:
-        """Extract metadata from PDF file"""
+    def extract_pdf_data(self, pdf_path: str) -> tuple[Dict[str, Any], List[Image.Image]]:
+        """Extract metadata and convert PDF to images in single operation"""
         try:
             doc = fitz.open(pdf_path)
+            
+            # Extract metadata
             metadata = doc.metadata
             page_count = doc.page_count
-            doc.close()
             
-            return {
+            metadata_dict = {
                 'title': metadata.get('title', ''),
                 'author': metadata.get('author', ''),
                 'subject': metadata.get('subject', ''),
@@ -98,16 +99,9 @@ class PDFProcessor:
                 'modification_date': metadata.get('modDate', ''),
                 'pages': page_count
             }
-        except Exception as e:
-            print(f"Error extracting metadata: {str(e)}")
-            return {}
-    
-    def pdf_to_images(self, pdf_path: str) -> List[Image.Image]:
-        """Convert PDF pages to PIL Images using PyMuPDF (faster)"""
-        try:
-            doc = fitz.open(pdf_path)
-            images = []
             
+            # Convert to images
+            images = []
             # Calculate zoom factor from DPI
             zoom = self.dpi / 72.0  # 72 DPI is default
             mat = fitz.Matrix(zoom, zoom)
@@ -121,22 +115,11 @@ class PDFProcessor:
                 pix = None  # Free memory
             
             doc.close()
-            return images
+            return metadata_dict, images
+            
         except Exception as e:
-            print(f"Error converting PDF to images: {str(e)}")
-            return []
-    
-    def get_page_size(self, pdf_path: str, page_num: int) -> tuple:
-        """Get page size for specific page"""
-        try:
-            doc = fitz.open(pdf_path)
-            page = doc[page_num]
-            rect = page.rect
-            doc.close()
-            return (int(rect.width), int(rect.height))
-        except Exception as e:
-            print(f"Error getting page size: {str(e)}")
-            return (0, 0)
+            print(f"Error processing PDF: {str(e)}")
+            return {}, []
     
     def save_temp_image(self, image: Image.Image, prefix: str = "page_") -> str:
         """Save PIL Image to temporary file and return path"""
@@ -164,11 +147,8 @@ class PDFProcessor:
     def process_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """Main method to process PDF and return structured data"""
         try:
-            # Extract metadata
-            metadata = self.extract_metadata(pdf_path)
-            
-            # Convert to images
-            images = self.pdf_to_images(pdf_path)
+            # Extract metadata and convert to images in single operation
+            metadata, images = self.extract_pdf_data(pdf_path)
             
             if not images:
                 raise Exception("Failed to convert PDF to images")
@@ -183,7 +163,7 @@ class PDFProcessor:
             
             # Process each page
             for page_idx, image in enumerate(images):
-                page_size = self.get_page_size(pdf_path, page_idx)
+                page_size = image.size  # Use actual image size that goes into LayoutDetector
                 temp_image_path = self.save_temp_image(image, f"page_{page_idx}_")
                 
                 if temp_image_path:
