@@ -2,25 +2,39 @@ import re
 from typing import List, Dict, Any, Optional
 
 class FigureMapper:
+    """Enhanced mapper with fuzzy matching and spatial awareness"""
     def __init__(self):
-        """Initialize figure mapper"""
-        pass
+        self.id_variations = {
+            'figure': ['fig', 'figure', 'image'],
+            'table': ['tab', 'table'],
+            'equation': ['eq', 'equation', 'eqn'],
+            'algorithm': ['alg', 'algorithm']
+        }
     
-    def map_references_to_figures(self, references: List[Dict[str, Any]], figures: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Map references to their corresponding figures"""
-        mapped_references = []
+    def map_references_to_figures(self, references: List[Dict[str, Any]], figures: List[Dict[str, Any]], 
+                                  page_mapping: Dict[int, List[int]] = None) -> List[Dict[str, Any]]:
+        """Enhanced reference mapping with multiple strategies"""
+        mapped_refs = []
         
-        for reference in references:
-            ref_text = reference.get('text', '')
-            ref_bbox = reference.get('bbox', {})
+        for ref in references:
+            ref_text = ref.get('text', '')
+            ref_bbox = ref.get('bbox', {})
             
-            # Extract figure ID from reference text
-            ref_figure_id = self._extract_id_from_reference(ref_text)
-            
-            # Find matching figure
+            # Try multiple matching strategies
             matched_figure = None
-            if ref_figure_id:
-                matched_figure = self._find_matching_figure(ref_figure_id, figures)
+            
+            # 1. Exact ID match
+            ref_id = self._extract_reference_id(ref_text)
+            if ref_id:
+                matched_figure = self._find_figure_by_id(ref_id, figures)
+            
+            # 2. Fuzzy text matching if no exact match
+            if not matched_figure:
+                matched_figure = self._fuzzy_match_figure(ref_text, figures)
+            
+            # 3. Spatial proximity matching (for same-page references)
+            if not matched_figure and page_mapping:
+                matched_figure = self._spatial_match_figure(ref_bbox, figures, page_mapping)
             
             # Create mapped reference
             mapped_ref = {
@@ -31,49 +45,91 @@ class FigureMapper:
             if matched_figure:
                 mapped_ref['figure_id'] = matched_figure['figure_id']
                 mapped_ref['not_matched'] = False
+                mapped_ref['match_confidence'] = matched_figure.get('match_confidence', 1.0)
             else:
                 mapped_ref['not_matched'] = True
             
-            mapped_references.append(mapped_ref)
+            mapped_refs.append(mapped_ref)
         
-        return mapped_references
+        return mapped_refs
     
-    def _extract_id_from_reference(self, ref_text: str) -> Optional[str]:
-        """Extract figure ID from reference text"""
-        # Patterns to extract IDs from references
+    def _extract_reference_id(self, ref_text: str) -> Optional[str]:
+        """Extract ID from reference text with improved patterns"""
         patterns = [
-            r'fig\.?\s*(\d+(?:\.\d+)*)',
-            r'figure\.?\s*(\d+(?:\.\d+)*)',
-            r'table\.?\s*(\d+(?:\.\d+)*)',
-            r'tab\.?\s*(\d+(?:\.\d+)*)',
-            r'equation\.?\s*(\d+(?:\.\d+)*)',
-            r'eq\.?\s*\((\d+(?:\.\d+)*)\)',
-            r'\((\d+(?:\.\d+)*)\)',
-            r'example\.?\s*(\d+(?:\.\d+)*)',
-            r'chart\.?\s*(\d+(?:\.\d+)*)',
-            r'graph\.?\s*(\d+(?:\.\d+)*)',
+            r'(?:fig|figure)s?\.?\s*(\d+(?:\.\d+)*(?:\s*[a-z])?)',  # Fig 1.2a
+            r'(?:tab|table)s?\.?\s*(\d+(?:\.\d+)*)',
+            r'(?:eq|equation)s?\.?\s*\(?(\d+(?:\.\d+)*)\)?',
+            r'(?:alg|algorithm)s?\.?\s*(\d+(?:\.\d+)*)',
+            r'\((\d+(?:\.\d+)*)\)',  # Just (1.2)
         ]
         
         ref_lower = ref_text.lower()
         for pattern in patterns:
             match = re.search(pattern, ref_lower)
             if match:
-                return match.group(1)
-        
+                return match.group(1).strip()
         return None
     
-    def _find_matching_figure(self, ref_id: str, figures: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Find figure that matches the reference ID"""
+    def _find_figure_by_id(self, ref_id: str, figures: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Find figure with matching ID"""
+        # Normalize ID (remove trailing letters for base match)
+        base_id = re.sub(r'[a-z]+$', '', ref_id.strip())
+        
         for figure in figures:
             fig_id = figure.get('figure_id', '')
             
-            # Direct match
+            # Exact match
             if fig_id == ref_id:
-                return figure
+                return {**figure, 'match_confidence': 1.0}
             
-            # Check if figure text contains the ID
+            # Base ID match (1.2 matches 1.2a)
+            if fig_id == base_id:
+                return {**figure, 'match_confidence': 0.9}
+            
+            # Check if ID appears in figure text
             fig_text = figure.get('text', '').lower()
-            if ref_id in fig_text:
-                return figure
+            if ref_id in fig_text or base_id in fig_text:
+                return {**figure, 'match_confidence': 0.8}
         
+        return None
+    
+    def _fuzzy_match_figure(self, ref_text: str, figures: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Fuzzy matching based on text similarity"""
+        ref_lower = ref_text.lower()
+        best_match = None
+        best_score = 0.5  # Minimum threshold
+        
+        for figure in figures:
+            fig_text = figure.get('text', '').lower()
+            if not fig_text:
+                continue
+            
+            # Calculate similarity score
+            score = self._calculate_similarity(ref_lower, fig_text)
+            
+            if score > best_score:
+                best_score = score
+                best_match = {**figure, 'match_confidence': score}
+        
+        return best_match
+    
+    def _calculate_similarity(self, text1: str, text2: str) -> float:
+        """Calculate text similarity score"""
+        # Simple word overlap similarity
+        words1 = set(text1.split())
+        words2 = set(text2.split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = words1 & words2
+        union = words1 | words2
+        
+        return len(intersection) / len(union)
+    
+    def _spatial_match_figure(self, ref_bbox: Dict[str, int], figures: List[Dict[str, Any]], 
+                             page_mapping: Dict[int, List[int]]) -> Optional[Dict[str, Any]]:
+        """Match based on spatial proximity"""
+        # This would require page information for the reference
+        # Implementation depends on your page tracking logic
         return None

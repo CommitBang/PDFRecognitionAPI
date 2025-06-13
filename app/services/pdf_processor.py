@@ -1,3 +1,4 @@
+# app/services/pdf_processor.py - Updated version
 import fitz
 import os
 import io
@@ -7,7 +8,7 @@ from paddleocr import PPStructureV3
 import tempfile
 import shutil
 from app.services.layout_detector import LayoutDetector
-from app.services.figure_id_generator import FigureIDGenerator
+from app.services.figure_grouper import FigureGrouper
 from app.services.reference_extractor import ReferenceExtractor
 from app.services.figure_mapper import FigureMapper
 
@@ -18,7 +19,6 @@ def get_pp_structure_instance(use_gpu: bool = True):
     """Get or create global PP-Structure instance"""
     global _pp_structure_instance
     if _pp_structure_instance is None:
-        # Check if models are already cached
         cache_dir = os.path.expanduser("~/.paddlex/official_models")
         if os.path.exists(cache_dir):
             print(f"Models cache found at: {cache_dir}")
@@ -29,39 +29,22 @@ def get_pp_structure_instance(use_gpu: bool = True):
         
         print("Initializing PP-StructureV3 with lightweight models...")
         
-        # Option 1: Ultra-lightweight configuration (fastest)
-        config_ultra_light = {
-            # Disable heavy features for speed
-            'use_doc_orientation_classify': False,
-            'use_doc_unwarping': False,
-            'use_textline_orientation': False,
-            'use_seal_recognition': False,
-            'use_chart_recognition': False,
-            'use_table_recognition': False,
-            'use_formula_recognition': False,
-            
-            # Device setting
-            'device': 'gpu' if use_gpu else 'cpu',
-        }
-        
-        # Option 2: Balanced configuration (good speed + accuracy)
         config_balanced = {
-            'layout_detection_model_name': 'PP-DocLayout-M',        # 75.2% mAP@0.5, 12.7ms/page
-            'text_detection_model_name': 'PP-OCRv4_server_det',     # Standard detection
-            'text_recognition_model_name': 'PP-OCRv4_server_rec',   # Standard recognition
+            'layout_detection_model_name': 'PP-DocLayout-M',
+            'text_detection_model_name': 'PP-OCRv4_server_det',
+            'text_recognition_model_name': 'PP-OCRv4_server_rec',
             
             'use_doc_orientation_classify': False,
             'use_doc_unwarping': False,
             'use_textline_orientation': False,
             'use_seal_recognition': False,
             'use_chart_recognition': False,
-            'use_table_recognition': False,   # Keep table recognition
-            'use_formula_recognition': False, # Keep formula recognition
+            'use_table_recognition': True,   # Keep for better table detection
+            'use_formula_recognition': True,  # Keep for better formula detection
             
             'device': 'gpu' if use_gpu else 'cpu',
         }
         
-        # Use ultra-lightweight configuration for maximum speed
         _pp_structure_instance = PPStructureV3(**config_balanced)
         print("PP-StructureV3 models loaded successfully!")
     else:
@@ -76,7 +59,7 @@ class PDFProcessor:
         
         # Initialize services
         self.layout_detector = LayoutDetector(self.pp_structure)
-        self.figure_id_generator = FigureIDGenerator()
+        self.figure_grouper = FigureGrouper()
         self.reference_extractor = ReferenceExtractor()
         self.figure_mapper = FigureMapper()
     
@@ -158,38 +141,61 @@ class PDFProcessor:
                 'metadata': metadata,
                 'pages': [],
                 'figures': [],
-                'temp_image_paths': []
+                'temp_image_paths': [],
+                'processing_info': {
+                    'total_layout_blocks': 0,
+                    'grouped_figures': 0,
+                    'matched_references': 0,
+                    'unmatched_references': 0
+                }
             }
+            
+            # Track page mapping for references
+            page_mapping = {}  # Maps page_idx to figure indices on that page
             
             # Process each page
             for page_idx, image in enumerate(images):
-                page_size = image.size  # Use actual image size that goes into LayoutDetector
+                page_size = image.size
                 temp_image_path = self.save_temp_image(image, f"page_{page_idx}_")
                 
                 if temp_image_path:
                     result['temp_image_paths'].append(temp_image_path)
                 
-                # Step 2: Detect layout and text from current page
+                # Step 1: Detect layout and text from current page
                 detection_result = self.layout_detector.detect_layout_and_text(temp_image_path)
                 text_blocks = detection_result.get('text_blocks', [])
                 layout_blocks = detection_result.get('layout_blocks', [])
                 
-                # Step 3: Generate figure IDs for layout blocks and save to figures
-                for layout_block in layout_blocks:
-                    figure_info = self.figure_id_generator.generate_figure_info(
-                        layout_block, 
-                        page_idx
-                    )
-                    result['figures'].append(figure_info)
+                result['processing_info']['total_layout_blocks'] += len(layout_blocks)
                 
-                # Step 4: Extract references from text blocks
+                # Step 2: Group related layout elements into complete figures
+                grouped_figures = self.figure_grouper.group_figure_elements(layout_blocks, page_idx)
+                result['processing_info']['grouped_figures'] += len(grouped_figures)
+                
+                # Track figure indices for this page
+                page_figure_indices = []
+                for figure in grouped_figures:
+                    page_figure_indices.append(len(result['figures']))
+                    result['figures'].append(figure)
+                
+                page_mapping[page_idx] = page_figure_indices
+                
+                # Step 3: Extract references from text blocks
                 references = self.reference_extractor.extract_references(text_blocks)
                 
-                # Step 5-7: Map references to figures (all figures collected so far)
+                # Step 4: Map references to figures with enhanced mapping
                 mapped_references = self.figure_mapper.map_references_to_figures(
                     references, 
-                    result['figures']
+                    result['figures'],
+                    page_mapping
                 )
+                
+                # Update processing stats
+                for ref in mapped_references:
+                    if ref.get('not_matched', False):
+                        result['processing_info']['unmatched_references'] += 1
+                    else:
+                        result['processing_info']['matched_references'] += 1
                 
                 # Create page data with processed information
                 page_data = {
@@ -197,13 +203,48 @@ class PDFProcessor:
                     'page_size': page_size,
                     'image_path': temp_image_path,
                     'blocks': text_blocks,
-                    'references': mapped_references
+                    'references': mapped_references,
+                    'figure_count': len(page_figure_indices)
                 }
                 
                 result['pages'].append(page_data)
+            
+            # Post-processing: Add figure relationships
+            self._add_figure_relationships(result['figures'], result['pages'])
             
             return result
             
         except Exception as e:
             print(f"Error processing PDF: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'error': str(e)}
+    
+    def _add_figure_relationships(self, figures: List[Dict[str, Any]], pages: List[Dict[str, Any]]):
+        """Add relationship information between figures"""
+        # Group figures by type and page
+        figures_by_page = {}
+        for fig in figures:
+            page_idx = fig.get('page_idx', 0)
+            if page_idx not in figures_by_page:
+                figures_by_page[page_idx] = []
+            figures_by_page[page_idx].append(fig)
+        
+        # Add sequential numbering within each type
+        for page_idx, page_figures in figures_by_page.items():
+            # Sort by vertical position
+            page_figures.sort(key=lambda f: f['bbox']['y'])
+            
+            # Group by type
+            by_type = {}
+            for fig in page_figures:
+                fig_type = fig.get('type', 'unknown')
+                if fig_type not in by_type:
+                    by_type[fig_type] = []
+                by_type[fig_type].append(fig)
+            
+            # Add sequential info
+            for fig_type, figs in by_type.items():
+                for idx, fig in enumerate(figs):
+                    fig['sequence_in_page'] = idx + 1
+                    fig['total_in_page'] = len(figs)
