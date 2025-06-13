@@ -1,4 +1,4 @@
-# app/services/pdf_processor.py - FigureGrouper 통합된 버전
+# app/services/pdf_processor.py - 타입 구분 기능이 통합된 버전
 import fitz
 import os
 import io
@@ -11,9 +11,7 @@ from app.services.layout_detector import LayoutDetector
 from app.services.figure_id_generator import FigureIDGenerator
 from app.services.reference_extractor import ReferenceExtractor
 from app.services.figure_mapper import FigureMapper
-from app.services.figure_grouper import FigureGrouper  # FigureGrouper 추가
 
-# Global PP-Structure instance to avoid reloading models
 _pp_structure_instance = None
 
 def get_pp_structure_instance(use_gpu: bool = True):
@@ -33,17 +31,13 @@ def get_pp_structure_instance(use_gpu: bool = True):
         
         # Balanced configuration
         config_balanced = {
-            'layout_detection_model_name': 'PP-DocLayout-M',        # 75.2% mAP@0.5, 12.7ms/page
-            'text_detection_model_name': 'PP-OCRv4_server_det',     # Standard detection
-            'text_recognition_model_name': 'PP-OCRv4_server_rec',   # Standard recognition
-            
             'use_doc_orientation_classify': False,
             'use_doc_unwarping': False,
             'use_textline_orientation': False,
             'use_seal_recognition': False,
             'use_chart_recognition': False,
-            'use_table_recognition': False,   # Keep table recognition
-            'use_formula_recognition': False, # Keep formula recognition
+            'use_table_recognition': False,
+            'use_formula_recognition': False,
             
             'device': 'gpu' if use_gpu else 'cpu',
         }
@@ -60,12 +54,11 @@ class PDFProcessor:
         # Use global PP-Structure instance to avoid reloading models
         self.pp_structure = get_pp_structure_instance(use_gpu)
         
-        # Initialize services
+        # Initialize services (이제 타입 구분 버전 사용)
         self.layout_detector = LayoutDetector(self.pp_structure)
         self.figure_id_generator = FigureIDGenerator()
         self.reference_extractor = ReferenceExtractor()
         self.figure_mapper = FigureMapper()
-        self.figure_grouper = FigureGrouper()  # FigureGrouper 인스턴스 추가
     
     def extract_pdf_data(self, pdf_path: str) -> tuple[Dict[str, Any], List[Image.Image]]:
         """Extract metadata and convert PDF to images in single operation"""
@@ -153,7 +146,7 @@ class PDFProcessor:
             # Process each page
             for page_idx, image in enumerate(images):
                 try:
-                    page_size = list(image.size)  # Use actual image size that goes into LayoutDetector
+                    page_size = list(image.size)
                     temp_image_path = self.save_temp_image(image, f"page_{page_idx}_")
                     
                     if temp_image_path:
@@ -164,30 +157,21 @@ class PDFProcessor:
                     text_blocks = detection_result.get('text_blocks', [])
                     layout_blocks = detection_result.get('layout_blocks', [])
                     
-                    # Step 3: FigureGrouper를 사용해서 관련 layout 요소들을 그룹핑
-                    print(f"Page {page_idx}: Grouping {len(layout_blocks)} layout blocks using FigureGrouper...")
-                    grouped_figures = self.figure_grouper.group_figure_elements(layout_blocks, page_idx)
+                    # Step 3: Generate figure IDs for layout blocks and save to figures
+                    # 이제 figure_id_generator가 reference_type도 생성함
+                    for layout_block in layout_blocks:
+                        try:
+                            figure_info = self.figure_id_generator.generate_figure_info(
+                                layout_block, 
+                                page_idx
+                            )
+                            result['figures'].append(figure_info)
+                        except Exception as e:
+                            print(f"Error generating figure info: {e}")
+                            continue
                     
-                    # Step 4: 그룹핑된 결과가 없으면 기존 방식으로 fallback
-                    if not grouped_figures:
-                        print(f"Page {page_idx}: No grouped figures found, falling back to individual processing...")
-                        # 기존 방식: 개별 layout_block을 figure로 처리
-                        for layout_block in layout_blocks:
-                            try:
-                                figure_info = self.figure_id_generator.generate_figure_info(
-                                    layout_block, 
-                                    page_idx
-                                )
-                                result['figures'].append(figure_info)
-                            except Exception as e:
-                                print(f"Error generating figure info: {e}")
-                                continue
-                    else:
-                        # FigureGrouper의 결과를 사용
-                        print(f"Page {page_idx}: Successfully grouped into {len(grouped_figures)} figures")
-                        result['figures'].extend(grouped_figures)
-                    
-                    # Step 5: Extract references from text blocks with page info
+                    # Step 4: Extract references from text blocks with page info
+                    # 이제 reference_extractor가 reference_type도 추출함
                     references = self.reference_extractor.extract_references(text_blocks, page_idx)
                     
                     # 모든 참조를 수집 (나중에 그래프 매핑에 사용)
@@ -215,10 +199,11 @@ class PDFProcessor:
                     })
                     continue
             
-            # Step 6-8: 모든 페이지 처리 후 그래프 기반 매핑 수행
+            # Step 5-7: 모든 페이지 처리 후 그래프 기반 매핑 수행
             print(f"Mapping {len(result['all_references'])} references to {len(result['figures'])} figures using graph-based approach...")
             
             try:
+                # 이제 figure_mapper가 타입을 고려하여 매핑함
                 all_mapped_references = self.figure_mapper.map_references_to_figures(
                     result['all_references'], 
                     result['figures']
@@ -242,32 +227,38 @@ class PDFProcessor:
                 # all_references는 최종 결과에서 제거
                 del result['all_references']
                 
-                # 매핑 통계 추가 (타입 안전성 보장)
-                try:
-                    total_refs = len(all_mapped_references)
-                    matched_count = sum(1 for ref in all_mapped_references if not ref.get('not_matched', True))
-                    unmatched_count = total_refs - matched_count
-                    match_rate = matched_count / total_refs if total_refs > 0 else 0.0
-                    
-                    result['mapping_statistics'] = {
-                        'total_references': total_refs,
-                        'matched_references': matched_count,
-                        'unmatched_references': unmatched_count,
-                        'match_rate': float(match_rate)
-                    }
-                    
-                    print(f"Mapping complete: {matched_count}/{total_refs} references matched ({match_rate:.1%})")
-                except Exception as e:
-                    print(f"Error calculating mapping statistics: {e}")
-                    result['mapping_statistics'] = {
-                        'total_references': 0,
-                        'matched_references': 0,
-                        'unmatched_references': 0,
-                        'match_rate': 0.0
-                    }
+                # 매핑 통계 추가
+                total_refs = len(all_mapped_references)
+                matched_count = sum(1 for ref in all_mapped_references if not ref.get('not_matched', True))
+                unmatched_count = total_refs - matched_count
+                match_rate = matched_count / total_refs if total_refs > 0 else 0.0
+                
+                result['mapping_statistics'] = {
+                    'total_references': total_refs,
+                    'matched_references': matched_count,
+                    'unmatched_references': unmatched_count,
+                    'match_rate': float(match_rate)
+                }
+                
+                # 타입별 통계 추가 (새로운 기능)
+                result['type_statistics'] = self._calculate_type_statistics(
+                    all_mapped_references, 
+                    result['figures']
+                )
+                
+                print(f"Mapping complete: {matched_count}/{total_refs} references matched ({match_rate:.1%})")
+                
+                # 타입별 매칭률 출력
+                if 'type_statistics' in result:
+                    print("\nType-specific matching rates:")
+                    for ref_type, stats in result['type_statistics'].get('matching_by_type', {}).items():
+                        if stats['total'] > 0:
+                            print(f"  {ref_type}: {stats['matched']}/{stats['total']} ({stats['rate']:.1%})")
                 
             except Exception as e:
                 print(f"Error in figure mapping: {e}")
+                import traceback
+                traceback.print_exc()
                 # 매핑 실패 시 기본 참조 유지
                 del result['all_references']
                 result['mapping_statistics'] = {
@@ -276,6 +267,7 @@ class PDFProcessor:
                     'unmatched_references': 0,
                     'match_rate': 0.0
                 }
+                result['type_statistics'] = {}
             
             return result
             
@@ -284,3 +276,80 @@ class PDFProcessor:
             import traceback
             traceback.print_exc()
             return {'error': str(e)}
+    
+    def _calculate_type_statistics(self, references: List[Dict[str, Any]], 
+                                  figures: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """타입별 통계 계산 (새로운 메서드)"""
+        stats = {
+            'figures_by_type': {},
+            'references_by_type': {},
+            'matching_by_type': {}
+        }
+        
+        # 피규어 타입별 카운트
+        for fig in figures:
+            # reference_type이 있으면 사용, 없으면 type 사용
+            ref_type = fig.get('reference_type', fig.get('type', 'unknown'))
+            stats['figures_by_type'][ref_type] = stats['figures_by_type'].get(ref_type, 0) + 1
+        
+        # 참조 타입별 카운트 및 매칭률
+        for ref in references:
+            ref_type = ref.get('reference_type', 'unknown')
+            stats['references_by_type'][ref_type] = stats['references_by_type'].get(ref_type, 0) + 1
+            
+            # 매칭 성공 여부
+            if ref_type not in stats['matching_by_type']:
+                stats['matching_by_type'][ref_type] = {'matched': 0, 'total': 0}
+            
+            stats['matching_by_type'][ref_type]['total'] += 1
+            if not ref.get('not_matched', True):
+                stats['matching_by_type'][ref_type]['matched'] += 1
+        
+        # 타입별 매칭률 계산
+        for ref_type, counts in stats['matching_by_type'].items():
+            if counts['total'] > 0:
+                counts['rate'] = counts['matched'] / counts['total']
+            else:
+                counts['rate'] = 0.0
+        
+        return stats
+
+
+# 편의 함수들 추가
+def print_type_statistics(result: Dict[str, Any]):
+    """타입별 통계를 보기 좋게 출력"""
+    if 'type_statistics' not in result:
+        print("No type statistics available")
+        return
+    
+    stats = result['type_statistics']
+    
+    print("\n=== Type Statistics ===")
+    print("\nFigures by type:")
+    for fig_type, count in sorted(stats.get('figures_by_type', {}).items()):
+        print(f"  {fig_type:12s}: {count:3d}")
+    
+    print("\nReferences by type:")
+    for ref_type, count in sorted(stats.get('references_by_type', {}).items()):
+        print(f"  {ref_type:12s}: {count:3d}")
+    
+    print("\nMatching performance by type:")
+    print(f"  {'Type':12s} {'Matched':>7s} {'Total':>7s} {'Rate':>7s}")
+    print("  " + "-" * 36)
+    for ref_type, data in sorted(stats.get('matching_by_type', {}).items()):
+        print(f"  {ref_type:12s} {data['matched']:7d} {data['total']:7d} {data['rate']:6.1%}")
+
+
+def get_unmatched_references_by_type(result: Dict[str, Any]) -> Dict[str, List[str]]:
+    """타입별로 매칭되지 않은 참조들 반환"""
+    unmatched = {}
+    
+    for page in result.get('pages', []):
+        for ref in page.get('references', []):
+            if ref.get('not_matched', False):
+                ref_type = ref.get('reference_type', 'unknown')
+                if ref_type not in unmatched:
+                    unmatched[ref_type] = []
+                unmatched[ref_type].append(ref['text'])
+    
+    return unmatched
