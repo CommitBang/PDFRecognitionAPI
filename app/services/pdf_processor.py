@@ -1,8 +1,8 @@
 import fitz
 import os
+import io
 from PIL import Image
 from typing import List, Dict, Any
-from pdf2image import convert_from_path
 from paddleocr import PPStructureV3
 import tempfile
 import shutil
@@ -14,16 +14,30 @@ from app.services.figure_mapper import FigureMapper
 class PDFProcessor:
     def __init__(self, dpi: int = 150, use_gpu: bool = True, lang: str = 'en'):
         self.dpi = dpi
-        # Initialize PP-StructureV3 once for all pages
+        # Initialize PP-StructureV3 with lightweight configuration
         self.pp_structure = PPStructureV3(
+            # Disable heavy features for speed
             use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
+            use_doc_unwarping=False, 
             use_textline_orientation=False,
             use_seal_recognition=False,
+            use_chart_recognition=False,
+            
+            # Keep only essential features
             use_table_recognition=True,
             use_formula_recognition=True,
-            use_chart_recognition=False,
-            device='gpu' if use_gpu else 'cpu'
+            
+            # Performance optimizations
+            device='gpu' if use_gpu else 'cpu',
+            
+            # Use lightweight models (if available)
+            layout_model='PP-DocLayout-S',  # Small model variant
+            ocr_model='PP-OCRv4-mobile',    # Mobile OCR model
+            
+            # Performance settings
+            cpu_threads=4,                   # Limit CPU threads
+            enable_mkldnn=True,             # Enable MKLDNN acceleration on CPU
+            precision='fp16' if use_gpu else 'fp32'  # Use fp16 on GPU for speed
         )
         
         # Initialize services
@@ -55,13 +69,24 @@ class PDFProcessor:
             return {}
     
     def pdf_to_images(self, pdf_path: str) -> List[Image.Image]:
-        """Convert PDF pages to PIL Images"""
+        """Convert PDF pages to PIL Images using PyMuPDF (faster)"""
         try:
-            images = convert_from_path(
-                pdf_path,
-                dpi=self.dpi,
-                fmt='RGB'
-            )
+            doc = fitz.open(pdf_path)
+            images = []
+            
+            # Calculate zoom factor from DPI
+            zoom = self.dpi / 72.0  # 72 DPI is default
+            mat = fitz.Matrix(zoom, zoom)
+            
+            for page_num in range(doc.page_count):
+                page = doc[page_num]
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("ppm")
+                img = Image.open(io.BytesIO(img_data))
+                images.append(img)
+                pix = None  # Free memory
+            
+            doc.close()
             return images
         except Exception as e:
             print(f"Error converting PDF to images: {str(e)}")
