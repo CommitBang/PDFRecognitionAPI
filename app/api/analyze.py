@@ -27,7 +27,7 @@ reference_model = api.model('Reference', {
     'bbox': fields.Nested(bbox_model, description='Bounding box coordinates'),
     'text': fields.String(description='Reference text'),
     'figure_id': fields.String(description='Referenced figure ID', required=False),
-    'not_matched': fields.Boolean(description='True if reference not matched to any figure', required=False)
+    'not_matched': fields.Boolean(description='True if reference not matched to any figure', required=False, default=False)
 })
 
 figure_model = api.model('Figure', {

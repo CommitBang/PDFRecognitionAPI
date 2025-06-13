@@ -30,6 +30,7 @@ class FigureMapper:
             
             if matched_figure:
                 mapped_ref['figure_id'] = matched_figure['figure_id']
+                mapped_ref['not_matched'] = False
             else:
                 mapped_ref['not_matched'] = True
             
