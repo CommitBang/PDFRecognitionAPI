@@ -31,14 +31,12 @@ def get_pp_structure_instance(use_gpu: bool = True):
         
         # Option 1: Ultra-lightweight configuration (fastest)
         config_ultra_light = {
-            # Use smallest models available
-            'layout_model': 'PP-DocLayout-S',        # 8.1ms/page on T4 GPU, 14.5ms/page on CPU
-            'det_model': 'PP-OCRv4_mobile_det',       # Mobile detection model
-            'rec_model': 'PP-OCRv4_mobile_rec',       # Mobile recognition model
-            'formula_model': 'PP-FormulaNet-S',       # 16x faster than L model
-            'table_model': 'SLANeXt_wireless',       # Lightweight table model
+            # Use smallest models available (correct property names)
+            'layout_detection_model_name': 'PP-DocLayout-S',        # 8.1ms/page on T4 GPU, 14.5ms/page on CPU
+            'text_detection_model_name': 'PP-OCRv4_mobile_det',     # Mobile detection model
+            'text_recognition_model_name': 'PP-OCRv4_mobile_rec',   # Mobile recognition model
             
-            # Disable heavy features
+            # Disable heavy features for speed
             'use_doc_orientation_classify': False,
             'use_doc_unwarping': False,
             'use_textline_orientation': False,
@@ -47,22 +45,28 @@ def get_pp_structure_instance(use_gpu: bool = True):
             'use_table_recognition': False,
             'use_formula_recognition': False,
             
-            'device': 'gpu' if use_gpu else 'cpu'
+            # Performance settings
+            'device': 'gpu:0' if use_gpu else 'cpu',
+            'precision': 'fp16' if use_gpu else 'fp32',
+            'enable_hpi': True,  # High performance inference
         }
         
         # Option 2: Balanced configuration (good speed + accuracy)
         config_balanced = {
-            'layout_model': 'PP-DocLayout-M',        # 75.2% mAP@0.5, 12.7ms/page
-            'det_model': 'PP-OCRv4_server_det',       # Standard detection
-            'rec_model': 'PP-OCRv4_server_rec',       # Standard recognition
+            'layout_detection_model_name': 'PP-DocLayout-M',        # 75.2% mAP@0.5, 12.7ms/page
+            'text_detection_model_name': 'PP-OCRv4_server_det',     # Standard detection
+            'text_recognition_model_name': 'PP-OCRv4_server_rec',   # Standard recognition
+            
             'use_doc_orientation_classify': False,
             'use_doc_unwarping': False,
             'use_textline_orientation': False,
             'use_seal_recognition': False,
             'use_chart_recognition': False,
-            'use_table_recognition': False,
-            'use_formula_recognition': False,
-            'device': 'gpu' if use_gpu else 'cpu'
+            'use_table_recognition': False,   # Keep table recognition
+            'use_formula_recognition': False, # Keep formula recognition
+            
+            'device': 'gpu:0' if use_gpu else 'cpu',
+            'precision': 'fp16' if use_gpu else 'fp32',
         }
         
         # Use ultra-lightweight configuration for maximum speed
