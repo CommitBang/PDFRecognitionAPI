@@ -27,22 +27,46 @@ def get_pp_structure_instance(use_gpu: bool = True):
         else:
             print("No model cache found - models will be downloaded")
         
-        print("Initializing PP-StructureV3 models...")
-        _pp_structure_instance = PPStructureV3(
-            # Disable heavy features for speed
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False, 
-            use_textline_orientation=False,
-            use_seal_recognition=False,
-            use_chart_recognition=False,
+        print("Initializing PP-StructureV3 with lightweight models...")
+        
+        # Option 1: Ultra-lightweight configuration (fastest)
+        config_ultra_light = {
+            # Use smallest models available
+            'layout_model': 'PP-DocLayout-S',        # 8.1ms/page on T4 GPU, 14.5ms/page on CPU
+            'det_model': 'PP-OCRv4_mobile_det',       # Mobile detection model
+            'rec_model': 'PP-OCRv4_mobile_rec',       # Mobile recognition model
+            'formula_model': 'PP-FormulaNet-S',       # 16x faster than L model
+            'table_model': 'SLANeXt_wireless',       # Lightweight table model
             
-            # Keep only essential features
-            use_table_recognition=True,
-            use_formula_recognition=True,
+            # Disable heavy features
+            'use_doc_orientation_classify': False,
+            'use_doc_unwarping': False,
+            'use_textline_orientation': False,
+            'use_seal_recognition': False,
+            'use_chart_recognition': False,
+            'use_table_recognition': False,
+            'use_formula_recognition': False,
             
-            # Performance optimizations
-            device='gpu' if use_gpu else 'cpu'
-        )
+            'device': 'gpu' if use_gpu else 'cpu'
+        }
+        
+        # Option 2: Balanced configuration (good speed + accuracy)
+        config_balanced = {
+            'layout_model': 'PP-DocLayout-M',        # 75.2% mAP@0.5, 12.7ms/page
+            'det_model': 'PP-OCRv4_server_det',       # Standard detection
+            'rec_model': 'PP-OCRv4_server_rec',       # Standard recognition
+            'use_doc_orientation_classify': False,
+            'use_doc_unwarping': False,
+            'use_textline_orientation': False,
+            'use_seal_recognition': False,
+            'use_chart_recognition': False,
+            'use_table_recognition': False,
+            'use_formula_recognition': False,
+            'device': 'gpu' if use_gpu else 'cpu'
+        }
+        
+        # Use ultra-lightweight configuration for maximum speed
+        _pp_structure_instance = PPStructureV3(**config_ultra_light)
         print("PP-StructureV3 models loaded successfully!")
     else:
         print("Using cached PP-StructureV3 instance")
