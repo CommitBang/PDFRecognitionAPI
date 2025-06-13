@@ -121,7 +121,8 @@ def install_requirements():
         "python-dotenv==1.0.0",
         "gunicorn==21.2.0",
         "pytest==7.4.3",
-        "pytest-flask==1.3.0"
+        "pytest-flask==1.3.0",
+        "networkx==3.1.0"
     ]
     
     temp_requirements = "temp_requirements.txt"

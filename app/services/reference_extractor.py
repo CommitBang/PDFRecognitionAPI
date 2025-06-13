@@ -1,3 +1,4 @@
+# app/services/reference_extractor.py - 페이지 정보 추가
 import re
 from typing import List, Dict, Any, Tuple
 
@@ -31,8 +32,8 @@ class ReferenceExtractor:
         # Compile all patterns into one
         self.compiled_pattern = re.compile('|'.join(self.reference_patterns), re.IGNORECASE)
     
-    def extract_references(self, text_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Extract references from text blocks, returning only text and bbox"""
+    def extract_references(self, text_blocks: List[Dict[str, Any]], page_idx: int = None) -> List[Dict[str, Any]]:
+        """Extract references from text blocks, returning text, bbox, and page_idx"""
         references = []
         
         for block in text_blocks:
@@ -53,11 +54,17 @@ class ReferenceExtractor:
                 # Estimate bounding box for the reference
                 ref_bbox = self._estimate_ref_bbox(bbox, text, start_pos, end_pos)
                 
-                # Add reference (only text and bbox)
-                references.append({
+                # Add reference with page info
+                reference = {
                     'text': ref_text,
                     'bbox': ref_bbox
-                })
+                }
+                
+                # Add page_idx if provided
+                if page_idx is not None:
+                    reference['page_idx'] = page_idx
+                
+                references.append(reference)
         
         return references
     
