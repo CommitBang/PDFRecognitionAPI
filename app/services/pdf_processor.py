@@ -1,4 +1,4 @@
-# app/services/pdf_processor.py - 타입 구분 기능이 통합된 버전
+# app/services/pdf_processor.py - 개선된 FigureGrouper를 사용하는 버전
 import fitz
 import os
 import io
@@ -8,6 +8,7 @@ from paddleocr import PPStructureV3
 import tempfile
 import shutil
 from app.services.layout_detector import LayoutDetector
+from app.services.figure_grouper import FigureGrouper  # 개선된 FigureGrouper import
 from app.services.figure_id_generator import FigureIDGenerator
 from app.services.reference_extractor import ReferenceExtractor
 from app.services.figure_mapper import FigureMapper
@@ -54,8 +55,9 @@ class PDFProcessor:
         # Use global PP-Structure instance to avoid reloading models
         self.pp_structure = get_pp_structure_instance(use_gpu)
         
-        # Initialize services (이제 타입 구분 버전 사용)
+        # Initialize services
         self.layout_detector = LayoutDetector(self.pp_structure)
+        self.figure_grouper = FigureGrouper()  # 개선된 FigureGrouper 사용
         self.figure_id_generator = FigureIDGenerator()
         self.reference_extractor = ReferenceExtractor()
         self.figure_mapper = FigureMapper()
@@ -157,21 +159,44 @@ class PDFProcessor:
                     text_blocks = detection_result.get('text_blocks', [])
                     layout_blocks = detection_result.get('layout_blocks', [])
                     
-                    # Step 3: Generate figure IDs for layout blocks and save to figures
-                    # 이제 figure_id_generator가 reference_type도 생성함
-                    for layout_block in layout_blocks:
+                    # Step 3: Group related layout elements using improved FigureGrouper
+                    print(f"Grouping {len(layout_blocks)} layout elements on page {page_idx}...")
+                    grouped_figures = self.figure_grouper.group_figure_elements(layout_blocks, page_idx)
+                    print(f"Created {len(grouped_figures)} grouped figures from {len(layout_blocks)} elements")
+                    
+                    # Step 3.5: Generate figure IDs and type information for grouped figures
+                    for grouped_figure in grouped_figures:
                         try:
-                            figure_info = self.figure_id_generator.generate_figure_info(
-                                layout_block, 
+                            # 그룹핑된 figure에 대해 ID와 타입 정보 생성
+                            # grouped_figure는 이미 figure_id와 type을 가지고 있지만, 
+                            # figure_id_generator를 통해 reference_type 등 추가 정보 생성
+                            figure_info = {
+                                'figure_id': grouped_figure.get('figure_id'),
+                                'type': grouped_figure.get('type'),
+                                'bbox': grouped_figure.get('bbox'),
+                                'page_idx': grouped_figure.get('page_idx'),
+                                'text': grouped_figure.get('text', ''),
+                                'confidence': grouped_figure.get('confidence', 0.0),
+                                'elements': grouped_figure.get('elements', []),
+                                'grouping_method': grouped_figure.get('grouping_method', 'unknown'),
+                                'id_source': grouped_figure.get('id_source', 'unknown')
+                            }
+                            
+                            # figure_id_generator를 사용하여 reference_type 추가
+                            enhanced_info = self.figure_id_generator.generate_figure_info(
+                                grouped_figure, 
                                 page_idx
                             )
+                            
+                            # 기존 정보에 reference_type 추가
+                            figure_info['reference_type'] = enhanced_info.get('reference_type', 'figure')
+                            
                             result['figures'].append(figure_info)
                         except Exception as e:
                             print(f"Error generating figure info: {e}")
                             continue
                     
                     # Step 4: Extract references from text blocks with page info
-                    # 이제 reference_extractor가 reference_type도 추출함
                     references = self.reference_extractor.extract_references(text_blocks, page_idx)
                     
                     # 모든 참조를 수집 (나중에 그래프 매핑에 사용)
@@ -190,6 +215,8 @@ class PDFProcessor:
                     
                 except Exception as e:
                     print(f"Error processing page {page_idx}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     # 에러가 발생한 페이지도 기본 구조로 추가
                     result['pages'].append({
                         'index': page_idx,
@@ -240,11 +267,14 @@ class PDFProcessor:
                     'match_rate': float(match_rate)
                 }
                 
-                # 타입별 통계 추가 (새로운 기능)
+                # 타입별 통계 추가
                 result['type_statistics'] = self._calculate_type_statistics(
                     all_mapped_references, 
                     result['figures']
                 )
+                
+                # 그룹핑 통계 추가
+                result['grouping_statistics'] = self._calculate_grouping_statistics(result['figures'])
                 
                 print(f"Mapping complete: {matched_count}/{total_refs} references matched ({match_rate:.1%})")
                 
@@ -254,6 +284,15 @@ class PDFProcessor:
                     for ref_type, stats in result['type_statistics'].get('matching_by_type', {}).items():
                         if stats['total'] > 0:
                             print(f"  {ref_type}: {stats['matched']}/{stats['total']} ({stats['rate']:.1%})")
+                
+                # 그룹핑 통계 출력
+                if 'grouping_statistics' in result:
+                    stats = result['grouping_statistics']
+                    print(f"\nGrouping statistics:")
+                    print(f"  Total figures: {stats['total_figures']}")
+                    print(f"  Grouped figures: {stats['grouped_figures']}")
+                    print(f"  Total elements: {stats['total_elements']}")
+                    print(f"  Average elements per figure: {stats['avg_elements_per_figure']:.1f}")
                 
             except Exception as e:
                 print(f"Error in figure mapping: {e}")
@@ -268,6 +307,7 @@ class PDFProcessor:
                     'match_rate': 0.0
                 }
                 result['type_statistics'] = {}
+                result['grouping_statistics'] = {}
             
             return result
             
@@ -279,7 +319,7 @@ class PDFProcessor:
     
     def _calculate_type_statistics(self, references: List[Dict[str, Any]], 
                                   figures: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """타입별 통계 계산 (새로운 메서드)"""
+        """타입별 통계 계산"""
         stats = {
             'figures_by_type': {},
             'references_by_type': {},
@@ -313,6 +353,42 @@ class PDFProcessor:
                 counts['rate'] = 0.0
         
         return stats
+    
+    def _calculate_grouping_statistics(self, figures: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """그룹핑 통계 계산"""
+        stats = {
+            'total_figures': len(figures),
+            'grouped_figures': 0,
+            'single_element_figures': 0,
+            'total_elements': 0,
+            'max_elements_in_figure': 0,
+            'avg_elements_per_figure': 0.0,
+            'grouping_methods': {}
+        }
+        
+        element_counts = []
+        
+        for fig in figures:
+            elements = fig.get('elements', [])
+            element_count = len(elements)
+            element_counts.append(element_count)
+            
+            stats['total_elements'] += element_count
+            
+            if element_count > 1:
+                stats['grouped_figures'] += 1
+            else:
+                stats['single_element_figures'] += 1
+            
+            # 그룹핑 방법별 통계
+            method = fig.get('grouping_method', 'unknown')
+            stats['grouping_methods'][method] = stats['grouping_methods'].get(method, 0) + 1
+        
+        if element_counts:
+            stats['max_elements_in_figure'] = max(element_counts)
+            stats['avg_elements_per_figure'] = sum(element_counts) / len(element_counts)
+        
+        return stats
 
 
 # 편의 함수들 추가
@@ -338,6 +414,27 @@ def print_type_statistics(result: Dict[str, Any]):
     print("  " + "-" * 36)
     for ref_type, data in sorted(stats.get('matching_by_type', {}).items()):
         print(f"  {ref_type:12s} {data['matched']:7d} {data['total']:7d} {data['rate']:6.1%}")
+
+
+def print_grouping_statistics(result: Dict[str, Any]):
+    """그룹핑 통계를 보기 좋게 출력"""
+    if 'grouping_statistics' not in result:
+        print("No grouping statistics available")
+        return
+    
+    stats = result['grouping_statistics']
+    
+    print("\n=== Grouping Statistics ===")
+    print(f"Total figures: {stats['total_figures']}")
+    print(f"Grouped figures (>1 element): {stats['grouped_figures']}")
+    print(f"Single element figures: {stats['single_element_figures']}")
+    print(f"Total elements: {stats['total_elements']}")
+    print(f"Average elements per figure: {stats['avg_elements_per_figure']:.2f}")
+    print(f"Max elements in a figure: {stats['max_elements_in_figure']}")
+    
+    print("\nGrouping methods used:")
+    for method, count in sorted(stats.get('grouping_methods', {}).items()):
+        print(f"  {method}: {count}")
 
 
 def get_unmatched_references_by_type(result: Dict[str, Any]) -> Dict[str, List[str]]:
